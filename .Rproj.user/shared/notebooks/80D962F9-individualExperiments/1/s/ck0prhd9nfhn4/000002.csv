@@ -1,0 +1,6 @@
+"0","data_info_boot <- gen_sim_data(n=100, ref_n=100, p=100, num_in_group=4, k=50, zero_ratio =0.001)"
+"1","[1]"
+"1"," ""There are  2220 nulls; and  2730  non-nulls"""
+"1","
+"
+"0","# gen_sim_data(n=100, ref_n=100, p=100, num_in_group=5, k=50, zero_ratio =0.002)"

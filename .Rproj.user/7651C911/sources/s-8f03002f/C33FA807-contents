@@ -1,0 +1,404 @@
+---
+title: "real_data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(Rcpp)
+library(fabricatr)
+library(mltools)
+library(onehot)
+library(mgcv)
+library(tidyverse)
+library(foreach)
+library(doParallel)
+library(kableExtra)
+library(boot)
+library(tensorr)
+library(dplyr)
+library(reshape2)
+library(dvmisc)
+library(tidyverse)
+library(hash)
+source("Utils.R")
+source("func_sim_idpt.R")
+source("func_sim_boot.R")
+sourceCpp("Cov_struct_func.cpp")
+setwd("~/FABBrainConnectome/FAB_corr")
+set.seed(123)
+options(warn=-1)
+
+```
+
+```{r load-raw-data}
+HIST_raw <- read.csv("data/depmap_breast_gene_expression_data.csv")
+NEW_raw <- read.csv("data/depmap_lung_gene_expression_data.csv")
+```
+
+
+```{r}
+dim(HIST_raw)
+dim(NEW_raw)
+```
+
+
+```{r filter-data}
+useful_col <- colnames(HIST_raw)
+
+# Cancel cell line column
+HIST <- HIST_raw[, -1]
+NEW_all <- NEW_raw[, -1]
+
+# Cancel NA rows
+HIST <- na.omit(HIST)
+NEW_all <- na.omit(NEW_all)
+
+# Cancel zero var cols
+HIST <- HIST[, as.numeric(which(apply(HIST, 2, var) >= 0 ))]
+NEW_all <- NEW_all[, as.numeric(which(apply(NEW_all, 2, var) >= 0 ))]
+
+# Cancel non-common cols 
+common_col <- intersect(names(HIST), names(NEW_all))
+
+# Sselect useful and common cols
+selected_col <- intersect(common_col, useful_col)
+
+HIST <- HIST[, selected_col]
+NEW_all <- NEW_all[, selected_col]
+
+```
+
+```{r}
+dim(HIST)
+dim(NEW_all)
+
+```
+
+
+
+```{r get-statistics}
+n <- dim(NEW_all)[1]
+ref_n <- dim(HIST)[1]
+p <- dim(NEW_all)[2]
+ttl <- p*(p-1)/2
+
+num_in_group <- 100
+num_groups <- ttl %/% num_in_group
+num_null <- ttl %/% 2
+```
+
+
+
+```{r}
+n_test <- 150
+NEW_test <- NEW_all[1:n_test, ]
+NEW <- NEW_all[(n_test+1):n, ]
+n <- n - n_test
+```
+
+
+```{r generate-cor-stats}
+# UMPU F_r
+F_r <- atanh(cor(NEW, use = "pairwise.complete.obs"))
+# external reference group F_r for Z score
+F_r_ref <- atanh(cor(HIST, use = "pairwise.complete.obs"))
+
+# Check corr struct similarity
+plot(c(F_r), c(F_r_ref))
+
+valid_test_data <- data.frame(cbind(c(F_r), c(F_r_ref)))
+valid_test_data <- valid_test_data[is.finite(rowSums(valid_test_data)),]
+colnames(valid_test_data) <- c("NEW", "HIST")
+model <- lm(HIST ~ NEW, valid_test_data)
+summary(model)
+```
+
+
+```{r factor-loading-matrix-get-one}
+group_idx <- NULL
+for(i in 2:p){
+  for(j in 1:(i-1)){
+    group_idx <- rbind(group_idx, c(i, j, F_r_ref[i, j]))
+  }
+}
+group_idx <- data.frame(group_idx)
+
+colnames(group_idx) <- c("row_idx", "col_idx", "F_r_value")
+group_idx <- group_idx[order(group_idx$F_r_value), ]
+group_idx$group_idx <- as.numeric(split_quantile(x = 1:ttl, type = num_groups))
+```
+
+```{r get-group-F_r function}
+get_group_F_r <- function(group_subset, F_r){
+  group_index_list <- group_subset %>% dplyr::select(row_idx, col_idx) %>% as.matrix()
+  group_F_r <- F_r[group_index_list]
+  return(group_F_r)
+}
+```
+
+
+
+# Independent Stuff
+
+
+
+```{r get-ps}
+FAB_ps <- matrix(0, p, p)
+UMPU_ps <- matrix(0, p, p)
+  
+for(idx in 1:num_groups){
+  group_subset <- subset(group_idx, group_idx==idx)
+  group_direct_F_r <- get_group_F_r(group_subset, F_r)
+  group_indirect_F_r <- get_group_F_r(group_subset, F_r_ref)
+  
+  group_p <- dim(group_subset)[1]
+  
+  for(j in 1:group_p){
+    group_indirect_info <- group_indirect_F_r[-j]
+    mu_MLE <- mean(group_indirect_info)
+    psi2_MLE <- group_p/(group_p-1)*var(group_indirect_info) - 1/(ref_n-3) + 0.5
+    
+    tilde_m <- (mu_MLE - 0.2033211) / 0.4469499
+    tilde_v <- psi2_MLE
+    
+    fab_p <- 1 - abs(pnorm(group_direct_F_r[j]*sqrt(n-3) + 2*tilde_m*sqrt(ref_n-3)/tilde_v , 0, 1) - 
+                       pnorm(-group_direct_F_r[j]*sqrt(n-3), 0, 1) )
+    umpu_p <- 1 - abs(pnorm(group_direct_F_r[j]*sqrt(n-3) , 0, 1) - 
+                        pnorm(-group_direct_F_r[j]*sqrt(n-3), 0, 1) )
+    
+    row_idx = group_subset$row_idx[j]
+    col_idx = group_subset$col_idx[j]
+    FAB_ps[row_idx, col_idx] = fab_p
+    FAB_ps[col_idx, row_idx] = fab_p
+    UMPU_ps[row_idx, col_idx] = umpu_p
+    UMPU_ps[col_idx, row_idx] = umpu_p
+  }
+  if(idx %% 100 == 0){
+    print(idx)
+  }
+}
+```
+
+
+
+```{r make plot}
+UMPU_rej <- ifelse(UMPU_ps<0.05, "REJ", "NULL")
+FAB_rej <- ifelse(FAB_ps<0.05, "REJ", "NULL")
+# 
+melted_UMPU_rej <- melt(UMPU_rej)
+ggplot(data = melted_UMPU_rej, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("UMPU Rejection") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+
+melted_FAB_rej <- melt(FAB_rej)
+ggplot(data = melted_FAB_rej, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("FAB Rejection") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+
+melted_diff <- melt(UMPU_ps >= FAB_ps)
+ggplot(data = melted_diff, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("p_UMPU >= p_FAB") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+
+
+UMPU_FAB <- data.frame(UMPU = UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)],
+                       FAB = FAB_ps[lower.tri(FAB_ps, diag = FALSE)])
+
+ggplot(UMPU_FAB, aes(x=UMPU, y=FAB)) +
+        geom_point(size=1, alpha=0.05) +
+        labs(title="UMPU vs FAB", x="UMPU p-value", y = "FAB p-value")
+
+
+flat_UMPU_ps <- UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)]
+flat_FAB_ps <- FAB_ps[lower.tri(FAB_ps, diag = FALSE)]
+
+sorted_flat_UMPU <- sort(flat_UMPU_ps)
+sorted_flat_FAB <- sort(flat_FAB_ps)
+
+sorted_ps <- data.frame(cbind(sorted_flat_UMPU, sorted_flat_FAB))
+sorted_ps$rank <- 1:dim(sorted_ps)[1]
+
+
+
+max_idx <- max(sum(sorted_flat_UMPU<0.05), sum(sum(sorted_flat_FAB<0.05)))
+
+df <- sorted_ps %>%
+  gather(key = "variable", value = "value", -rank)
+
+ggplot(df, aes(x=rank, y=value)) + 
+        geom_line(size=2, aes(color = variable, linetype = variable)) + 
+        labs(title="Ranked (unmatched) P-value", x="rank", y = "p-value") +
+        xlim(0, max_idx) + 
+        ylim(0, 0.05)
+```
+
+
+```{r prepair-for-testing-API}
+NEW_test_removed <- NEW_test
+num_missing <- 100
+  
+for(row in 1:n_test){
+    NEW_test_removed[row, sample.int(p, num_missing)] <- NA  
+}
+
+ttl_missing <- sum(is.na(NEW_test_removed))
+
+test_data <- hash()
+test_data[["test_data_truth"]] <- NEW_test
+test_data[["test_data_removed"]] <- NEW_test_removed
+test_data[["ttl_missing"]] <- ttl_missing
+
+
+train_data_info <- hash()
+train_data_info$data_raw <- NEW
+
+pval_results <- hash()
+pval_results$FAB_ps <- FAB_ps
+pval_results$UMPU_ps <- UMPU_ps
+```
+
+
+```{r}
+source("Utils.R")
+alphas <- seq(0, 0.2, 0.005)
+# alphas <- c(0.375)
+comp_result_idpt <- get_comp_results_par(alphas, test_data, train_data_info, pval_results)
+comp_result_idpt
+
+ggplot() + 
+  geom_line(data = comp_result_idpt, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+  geom_line(data = comp_result_idpt, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+  ggtitle("Combine plot of BV cumulative counts")
+
+```
+
+
+# Bootstrapping Stuff
+
+```{r bootstrap-group}
+num_in_group <- 50
+num_groups <- ttl %/% num_in_group
+num_null <- ttl %/% 2
+```
+
+
+```{r get-cor-func}
+get_cor <- function(data, i){
+  sub_data <- data[i, ]
+  return(atanh(cor(sub_data)))
+}
+```
+
+```{r try-bootstrap}
+cores=detectCores()
+R = 1000
+bootobject <- boot(data = HIST, statistic = get_cor, R=R, parallel = "multicore", ncpus = cores)
+
+bootsample <- array(0, c(R, p, p))
+for(i in 1:R){
+  bootsample[i, ,] = matrix(bootobject$t[i, ], nrow=p)
+}
+
+rm(bootobject)
+```
+
+```{r get-cor-ps}
+boot_UMPU_ps <- matrix(0, p, p)
+boot_FAB_ps <- matrix(0, p, p)
+
+for(idx in 1:num_groups){
+  group_subset <- subset(group_idx, group_idx==idx)
+  group_mtx <- tensor_to_group_mtx(bootsample, group_subset)
+  group_Cor_F_r <- cor(t(group_mtx))
+  group_F_r <- F_r[cbind(group_subset$row_idx, group_subset$col_idx)]
+  group_p <- dim(group_subset)[1]
+  group_result <- getFABnUMPUpvals(group_Cor_F_r, group_F_r, n, group_p)
+  
+  for(i in 1:group_p){
+    row_idx = group_subset$row_idx[i]
+    col_idx = group_subset$col_idx[i]
+    boot_UMPU_ps[row_idx, col_idx] = group_result[1, i]
+    boot_UMPU_ps[col_idx, row_idx] = group_result[1, i]
+    boot_FAB_ps[row_idx, col_idx] = group_result[2, i]
+    boot_FAB_ps[col_idx, row_idx] = group_result[2, i]
+  }
+  if(idx %% 500 == 0){
+    print(idx)
+  }
+}
+
+```
+
+```{r plot-ps-boot}
+
+boot_UMPU_rej <- ifelse(boot_UMPU_ps<0.05, 1, 0)
+boot_FAB_rej <- ifelse(boot_FAB_ps<0.05, 1, 0)
+
+boot_melted_UMPU_rej <- melt(boot_UMPU_rej)
+ggplot(data = boot_melted_UMPU_rej, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+boot_melted_FAB_rej <- melt(boot_FAB_rej)
+ggplot(data = boot_melted_FAB_rej, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+boot_melted_diff <- melt(boot_UMPU_ps - boot_FAB_ps)
+ggplot(data = boot_melted_diff, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+
+boot_UMPU_FAB <- data.frame(UMPU = boot_UMPU_ps[lower.tri(boot_UMPU_ps, diag = FALSE)],
+                       FAB = boot_FAB_ps[lower.tri(boot_FAB_ps, diag = FALSE)])
+
+ggplot(boot_UMPU_FAB, aes(x=UMPU, y=FAB)) + 
+        geom_point(size=2, alpha=0.1) + 
+        labs(title="UMPU vs FAB", x="UMPU p-value", y = "FAB p-value") 
+
+boot_flat_UMPU_ps <- boot_UMPU_ps[lower.tri(boot_UMPU_ps, diag = FALSE)]
+boot_flat_FAB_ps <- boot_FAB_ps[lower.tri(boot_FAB_ps, diag = FALSE)]
+
+boot_sorted_flat_UMPU <- sort(boot_flat_UMPU_ps)
+boot_sorted_flat_FAB <- sort(boot_flat_FAB_ps)
+
+boot_sorted_ps <- data.frame(cbind(boot_sorted_flat_UMPU, boot_sorted_flat_FAB))
+boot_sorted_ps$rank <- 1:ttl
+
+boot_max_idx <- max(sum(boot_sorted_flat_UMPU<0.05), sum(sum(boot_sorted_flat_FAB<0.05)))
+
+df <- boot_sorted_ps %>%
+  gather(key = "variable", value = "value", -rank)
+
+ggplot(df, aes(x=rank, y=value)) + 
+        geom_line(size=2, aes(color = variable, linetype = variable)) + 
+        labs(title="Ranked (unmatched) P-value", x="rank", y = "p-value") +
+        xlim(0, max_idx) + 
+        ylim(0, 0.05)
+
+```
+
+
+```{r}
+boot_pval_results <- hash()
+boot_pval_results$FAB_ps <- boot_FAB_ps
+boot_pval_results$UMPU_ps <- boot_UMPU_ps
+```
+
+
+```{r}
+source("Utils.R")
+alphas <- seq(0, 1, 0.025)
+comp_result_boot <- get_comp_results_par(alphas, test_data, train_data_info, boot_pval_results)
+
+
+ggplot() + 
+  geom_line(data = comp_result_boot, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+  geom_line(data = comp_result_boot, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+  ggtitle("Combine plot of BV cumulative counts") 
+
+```

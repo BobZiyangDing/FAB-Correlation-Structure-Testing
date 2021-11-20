@@ -1,0 +1,5 @@
+"0","get_group_F_r <- function(group_subset, F_r){"
+"0","  group_index_list <- group_subset %>% dplyr::select(row_idx, col_idx) %>% as.matrix()"
+"0","  group_F_r <- F_r[group_index_list]"
+"0","  return(group_F_r)"
+"0","}"

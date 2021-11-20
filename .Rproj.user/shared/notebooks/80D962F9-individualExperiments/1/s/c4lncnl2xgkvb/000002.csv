@@ -1,0 +1,8 @@
+"0","# alphas <- seq(0, 0.2, 0.005)"
+"0","# source(""Utils.R"")"
+"0","# comp_result_par <- get_comp_results_par(alphas, test_data, data_info, results)"
+"0","# "
+"0","# ggplot() + "
+"0","#   geom_line(data = comp_result_par, aes(x=alphas,  y=FAB_mses), size=1, color=""blue"") +"
+"0","#   geom_line(data = comp_result_par, aes(x=alphas,  y=UMPU_mses), size=1, color=""green"") +"
+"0","#   ggtitle(""Independent FAB vs UMPU imputation precision"") "

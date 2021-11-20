@@ -1,0 +1,130 @@
+"0","# save(boot_massive_results, file = ""boot_massive_results.RData"")
+# boot_massive_results$`n-50-q-50`$FAB_power - boot_massive_results$`n-50-q-50`$UMPU_power
+boot_massive_results
+"
+"1","$`n-50-q-50`
+"
+"1","<hash> containing 8 key-value pair(s).
+  FAB_alpha : 0.9401799
+  FAB_power : 0.1756464
+  FAB_typeI : 0.05982014
+  FAB_typeII : 0.8243536
+  UMPU_alpha : 0.9481533
+  UMPU_power : 0.1529669
+  UMPU_typeI : 0.0518467
+  UMPU_typeII : 0.8470331
+"
+"1","
+"
+"1","$`n-50-q-100`
+"
+"1","<hash> containing 8 key-value pair(s).
+  FAB_alpha : 0.9439117
+  FAB_power : 0.1866755
+  FAB_typeI : 0.05608835
+  FAB_typeII : 0.8133245
+  UMPU_alpha : 0.9498171
+  UMPU_power : 0.1576577
+  UMPU_typeI : 0.05018286
+  UMPU_typeII : 0.8423423
+"
+"1","
+"
+"1","$`n-50-q-200`
+"
+"1","<hash> containing 8 key-value pair(s).
+  FAB_alpha : 0.9453711
+  FAB_power : 0.1929165
+  FAB_typeI : 0.05462892
+  FAB_typeII : 0.8070835
+  UMPU_alpha : 0.9505096
+  UMPU_power : 0.1614968
+  UMPU_typeI : 0.04949037
+  UMPU_typeII : 0.8385032
+"
+"1","
+"
+"1","$`n-100-q-50`
+"
+"1","<hash> containing 8 key-value pair(s).
+  FAB_alpha : 0.9471772
+  FAB_power : 0.2742834
+  FAB_typeI : 0.05282276
+  FAB_typeII : 0.7257166
+  UMPU_alpha : 0.9497081
+  UMPU_power : 0.2472955
+  UMPU_typeI : 0.05029192
+  UMPU_typeII : 0.7527045
+"
+"1","
+"
+"1","$`n-100-q-100`
+"
+"1","<hash> containing 8 key-value pair(s).
+  FAB_alpha : 0.9477019
+  FAB_power : 0.2736976
+  FAB_typeI : 0.05229811
+  FAB_typeII : 0.7263024
+  UMPU_alpha : 0.949533
+  UMPU_power : 0.2416333
+  UMPU_typeI : 0.05046704
+  UMPU_typeII : 0.7583667
+"
+"1","
+"
+"1","$`n-100-q-200`
+"
+"1","<hash> containing 8 key-value pair(s).
+  FAB_alpha : 0.9465831
+  FAB_power : 0.2794359
+  FAB_typeI : 0.05341691
+  FAB_typeII : 0.7205641
+  UMPU_alpha : 0.9480008
+  UMPU_power : 0.2476485
+  UMPU_typeI : 0.05199922
+  UMPU_typeII : 0.7523515
+"
+"1","
+"
+"1","$`n-200-q-50`
+"
+"1","<hash> containing 8 key-value pair(s).
+  FAB_alpha : 0.9539611
+  FAB_power : 0.3661207
+  FAB_typeI : 0.04603894
+  FAB_typeII : 0.6338793
+  UMPU_alpha : 0.959554
+  UMPU_power : 0.3331609
+  UMPU_typeI : 0.04044599
+  UMPU_typeII : 0.6668391
+"
+"1","
+"
+"1","$`n-200-q-100`
+"
+"1","<hash> containing 8 key-value pair(s).
+  FAB_alpha : 0.9472909
+  FAB_power : 0.3728699
+  FAB_typeI : 0.05270908
+  FAB_typeII : 0.6271301
+  UMPU_alpha : 0.9480535
+  UMPU_power : 0.3401426
+  UMPU_typeI : 0.0519465
+  UMPU_typeII : 0.6598574
+"
+"1","
+"
+"1","$`n-200-q-200`
+"
+"1","<hash> containing 8 key-value pair(s).
+  FAB_alpha : 0.9452432
+  FAB_power : 0.4045852
+  FAB_typeI : 0.05475683
+  FAB_typeII : 0.5954148
+  UMPU_alpha : 0.9475619
+  UMPU_power : 0.3688248
+  UMPU_typeI : 0.0524381
+  UMPU_typeII : 0.6311752
+"
+"1","
+"

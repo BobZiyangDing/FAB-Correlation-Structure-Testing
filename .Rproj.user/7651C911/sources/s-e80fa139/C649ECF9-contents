@@ -1,0 +1,44 @@
+---
+title: "test_pfilter"
+output: html_document
+---
+
+```{r}
+source("pfilter.R")
+
+# 20 p-values, grouped into four groups of 5
+
+P = c(
+.03, .01, .18, .04, .08, # group 1
+.05, .11, .06, .01, .89, # group 2
+.14, .12, .58, .11, .11, # group 3
+.88, .24, .09, .66, .45  # group 4
+)
+
+# we would like to control overall FDR at level 0.2,
+#	 	and group-level FDR at level 0.3
+alphas = c(0.2, 0.3)
+# to control overall FDR, the first column of "groups"
+#		places each p-value into its own group
+# to control group-level FDR, the second column of "groups"
+#		assigns each p-value to its group (group 1, 2, 3, or 4)
+groups = cbind(1:20, c(1,1,1,1,1,2,2,2,2,2,3,3,3,3,3,4,4,4,4,4))
+
+Discoveries1 = pfilter(P,alphas,groups)
+# a "1" indicates that the p-value was selected (identified as a likely true signal)
+Discoveries1
+
+
+# next, let's also control FDR for an additional partition
+# 	of the p-values
+alphas = c(alphas, 0.1)
+groups = cbind(groups, c(1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4))
+# we now have three forms of FDR control:
+# (1) individual p-values, (2) the original groups (four groups of 5),
+#		and (3) the new grouping into five groups of 4
+
+Discoveries2 = pfilter(P,alphas,groups)
+# fewer discoveries than before, now that we've added a new constraint 
+#	with this third layer
+Discoveries2
+```

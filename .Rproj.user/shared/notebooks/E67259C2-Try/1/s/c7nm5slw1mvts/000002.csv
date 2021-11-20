@@ -1,0 +1,3 @@
+"0",""
+"0","RejPlots_boot_case_1 <- makeRejPlot(boot_results, have_Truth = FALSE)"
+"0","plot(RejPlots_boot_case_1$UMPU_rej)"

@@ -1,0 +1,4 @@
+"0","power_UMPU <- hist(UMPU_alter, plot=FALSE)"
+"0","power_FAB <- hist(FAB_alter, plot=FALSE)"
+"0",""
+"0","plot(power_FAB, col=c2)"

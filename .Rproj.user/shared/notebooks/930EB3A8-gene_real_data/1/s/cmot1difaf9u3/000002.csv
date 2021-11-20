@@ -1,0 +1,2 @@
+"0","unique_pairs <- unique(cbind(Truth_raw$Gene_1, Truth_raw$Gene_2))"
+"0","col_needed <- unique(c(Truth_raw$gene_1, Truth_raw$gene_2))"

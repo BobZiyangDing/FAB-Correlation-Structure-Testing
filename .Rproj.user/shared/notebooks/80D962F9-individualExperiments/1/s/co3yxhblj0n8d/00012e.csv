@@ -1,0 +1,7 @@
+"0","idpt_UMPU_FAB_Scatter <- UMPUvsFABPlots"
+"0","idpt_UMPU_FAB_Power_Line <- PDistPlots$Rank"
+"0",""
+"0",""
+"0","# "
+"0","ggsave(plot = idpt_UMPU_FAB_Rej_Plot, width = 10, height = 5, dpi = 300, filename = ""image/idpt_UMPU_FAB_Rej_Plot.pdf"")"
+"0","ggsave(plot = RejPlots$rej_diff, width = 10, height = 5, dpi = 300, filename = ""image/idpt_Rej_diff_Plot.pdf"")"

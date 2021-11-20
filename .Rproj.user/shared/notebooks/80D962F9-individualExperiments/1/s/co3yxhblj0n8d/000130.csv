@@ -1,0 +1,3 @@
+"0","ggsave(plot = idpt_UMPU_FAB_Null_Dist, width = 10, height = 5, dpi = 300, filename = ""image/idpt_UMPU_FAB_Null_Dist.pdf"")"
+"0","ggsave(plot = idpt_UMPU_FAB_Alter_Dist, width = 10, height = 5, dpi = 300, filename = ""image/idpt_UMPU_FAB_Alter_Dist.pdf"")"
+"0","ggsave(plot = idpt_UMPU_FAB_Scatter, width = 7, height = 5, dpi = 300, filename = ""image/idpt_UMPU_FAB_Scatter.pdf"")"

@@ -1,0 +1,26 @@
+"0","RejPlots_boot <- makeRejPlot(results_boot)
+# plot(RejPlots_boot$UMPU_rej)
+# plot(RejPlots_boot$FAB_rej)
+# plot(RejPlots_boot$Diff)
+# plot(RejPlots_boot$Truth)
+
+# make UMPU vs FAB Plots
+UMPUvsFABPlots_boot <- makeUMPUvsFABPlot(results_boot)
+# plot(UMPUvsFABPlots_boot)
+
+# make p value distribution plot
+PDistPlots_boot <- makePDistPlot(results_boot)
+# plot(PDistPlots$UMPU_null)
+# plot(PDistPlots$FAB_null)
+# plot(PDistPlots$UMPU_power)
+# plot(PDistPlots$FAB_power)
+# plot(PDistPlots_boot$Rank)
+
+UMPU_FAB_Rej_legend <- g_legend(RejPlots_boot$UMPU_rej)
+
+boot_UMPU_FAB_Rej_Plot <- grid.arrange(arrangeGrob(RejPlots_boot$UMPU_rej + theme(legend.position=""none""),
+                                                   RejPlots_boot$FAB_rej + theme(legend.position=""none""),
+                                                   nrow=1),
+                                       UMPU_FAB_Rej_legend, nrow=2, heights=c(10, 1))
+"
+"0","boot_UMPU_FAB_Null_Dist <- grid.arrange(PDistPlots_boot$UMPU_null, PDistPlots_boot$FAB_null, nrow = 1)"

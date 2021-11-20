@@ -1,0 +1,26 @@
+{
+    "id": "34B50D58",
+    "path": "/home/grad/zd26/FABBrainConnectome/FAB_corr/Utils.R",
+    "project_path": "Utils.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1636417322880.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "36,37",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1636826627,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1636826627690,
+    "read_only": false,
+    "read_only_alternatives": []
+}

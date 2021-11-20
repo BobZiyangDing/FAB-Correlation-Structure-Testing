@@ -1,0 +1,4 @@
+"0","get_cor <- function(data, i){"
+"0","  sub_data <- data[i, ]"
+"0","  return(atanh(cor(sub_data)))"
+"0","}"

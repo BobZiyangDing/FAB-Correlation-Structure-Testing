@@ -1,0 +1,278 @@
+---
+title: "Sim_covStruct_divideConquer"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+library(Rcpp)
+library(fabricatr)
+library(mltools)
+library(onehot)
+library(mgcv)
+library(tidyverse)
+library(foreach)
+library(doParallel)
+library(kableExtra)
+library(boot)
+library(tensorr)
+library(reshape2)
+library(dvmisc)
+source("Utils.R")
+source("pfilter.R")
+sourceCpp("Cov_struct_func.cpp")
+setwd("~/FABBrainConnectome/FAB_corr")
+set.seed(123)
+options(warn=-1)
+```
+
+```{r params}
+n <- 10000
+p <- 150
+ref_n <- 500
+
+ttl <- p*(p-1)/2
+
+num_in_group <- 20
+num_groups <- ttl %/% num_in_group 
+
+num_null <- ttl %/% 2
+```
+
+
+```{r generate-uncorrelated-data-huge, message=FALSE, warning=FALSE}
+
+mu <- runif(p, -100, 100)
+eigens <- runif(p, 1, 1000)
+Sigma <- genPositiveDefMat(p, covMethod = 'eigen', eigenvalue = eigens)$Sigma
+
+zero_idx <- sample.int(ttl, num_null)
+
+null_idx_cbind <- NULL
+alter_idx_cbind <- NULL
+count <- 1
+for(i in 2:p){
+  for(j in 1:(i-1)){
+    if(count %in% zero_idx){
+      Sigma[i, j] <- 0
+      Sigma[j, i] <- 0
+      null_idx_cbind <- rbind(null_idx_cbind, c(i, j))
+    }
+    else{
+      alter_idx_cbind <- rbind(alter_idx_cbind, c(i, j))
+    }
+    count = count + 1
+  }
+}
+
+data_raw <- data.frame(mvrnorm(n, mu, Sigma))
+data_ref <- data.frame(mvrnorm(ref_n, mu, Sigma))
+
+dim(data_raw)
+dim(data_ref)
+```
+
+
+```{r}
+# Partition data into idpt groups
+splitted_data <- split(data_raw, sample(1:(num_in_group+1), nrow(data_raw), replace=T))
+
+list_F_r <- list()
+list_n <- c()
+for(i in 1:num_in_group+1){
+  list_F_r[[i]] <- atanh(cor(splitted_data[[i]], use = "pairwise.complete.obs"))
+  list_n[i] <- dim(splitted_data[[i]])[1]
+}
+
+umpu_n <- rbind(data_raw, data_ref)
+
+F_r <- atanh(cor(rbind(data_raw, data_ref)))
+
+F_r_ref <- cor(data_ref, use = "pairwise.complete.obs")
+
+
+length(list_F_r)
+length(list_n)
+```
+
+
+#################################################################################
+Factor Loading Matrix need to be independent from what it was
+#################################################################################
+
+```{r This is actually wrong but original}
+
+group_idx <- NULL
+for(i in 2:p){
+  for(j in 1:(i-1)){
+    group_idx <- rbind(group_idx, c(i, j, F_r_ref[i, j]))
+  }
+}
+group_idx <- data.frame(group_idx)
+
+colnames(group_idx) <- c("row_idx", "col_idx", "F_r_value")
+group_idx <- group_idx[order(group_idx$F_r_value), ]
+group_idx$group_idx <- as.numeric(split_quantile(x = 1:ttl, type = num_groups))
+
+```
+
+#################################################################################
+End of revision
+#################################################################################
+
+```{r}
+get_group_F_r <- function(group_subset, list_F_r){
+  len <- dim(group_subset)[1]
+  group_F_r <- NULL
+  for(i in 1:len){
+    target_F_r_group <- list_F_r[[i]]
+    row_idx <- group_subset$row_idx[i]
+    col_idx <- group_subset$col_idx[i]
+    single_F_r <- target_F_r_group[row_idx, col_idx]
+    group_F_r <- rbind(group_F_r, single_F_r)
+  }
+  return(group_F_r)
+}
+```
+
+
+```{r}
+UMPU_ps <- diag(p)
+FAB_ps <- diag(p)
+
+for(idx in 1:num_groups){
+  group_subset <- subset(group_idx, group_idx==idx)
+  group_F_r <- get_group_F_r(group_subset, list_F_r)
+  
+  group_UMPU_F_r <- F_r[cbind(group_subset$row_idx, group_subset$col_idx)]
+  
+  group_p <- dim(group_subset)[1]
+  
+  for(j in 1:group_p){
+    group_n <- list_n[j]
+    group_indirect_info <- group_F_r[-j]
+    mu_MLE <- mean(group_indirect_info)
+    psi2_MLE <- group_p/(group_p-1)*var(group_indirect_info) - 1/(group_n-3)
+    
+    tilde_m <- mu_MLE
+    tilde_v <- psi2_MLE
+    # umpu_p <- 1 - abs(pnorm(group_UMPU_F_r[j]*sqrt(n-3), 0, 1) - 
+    #                   pnorm(-group_UMPU_F_r[j]*sqrt(n-3), 0, 1) )
+    fab_p <- 1 - abs(pnorm(group_F_r[j]*sqrt(group_n-3) + 2*tilde_m*sqrt(group_n-3)/tilde_v , 0, 1) - 
+                      pnorm(-group_F_r[j]*sqrt(group_n-3), 0, 1) )
+    
+    row_idx = group_subset$row_idx[j]
+    col_idx = group_subset$col_idx[j]
+    # UMPU_ps[row_idx, col_idx] = umpu_p
+    # UMPU_ps[col_idx, row_idx] = umpu_p
+    FAB_ps[row_idx, col_idx] = fab_p
+    FAB_ps[col_idx, row_idx] = fab_p
+  }
+  if(idx %% 500 == 0){
+    print(idx)
+  }
+}
+
+UMPU_ps <- 1 - abs(pnorm(F_r*sqrt(umpu_n-3), 0, 1) - pnorm(-F_r*sqrt(umpu_n-3), 0, 1) )
+
+dim(group_subset)
+
+```
+
+
+```{r}
+
+UMPU_rej <- ifelse(UMPU_ps<0.05, 1, 0)
+FAB_rej <- ifelse(FAB_ps<0.05, 1, 0)
+truth <- ifelse(Sigma==0, 0, 1)
+
+melted_UMPU_rej <- melt(UMPU_rej)
+ggplot(data = melted_UMPU_rej, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+melted_FAB_rej <- melt(FAB_rej)
+ggplot(data = melted_FAB_rej, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+melted_diff <- melt(UMPU_ps - FAB_ps)
+ggplot(data = melted_diff, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+
+melted_truth <- melt(truth)
+ggplot(data = melted_truth, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+
+```
+
+
+```{r}
+
+c1 <- rgb(100,100,255, max = 255, alpha = 100, names = "lt.blue")
+c2 <- rgb(255,100,100, max = 255, alpha = 100, names = "lt.pink")
+
+UMPU_true_null <- UMPU_ps[null_idx_cbind]
+FAB_true_null <- FAB_ps[null_idx_cbind]
+
+UMPU_alter <- UMPU_ps[alter_idx_cbind]
+FAB_alter <- FAB_ps[alter_idx_cbind]
+
+hist(UMPU_true_null, col=c1)
+hist(FAB_true_null, col=c2)
+power_UMPU <- hist(UMPU_alter, plot=FALSE)
+power_FAB <- hist(FAB_alter, plot=FALSE)
+
+plot(power_FAB, col=c2)
+plot(power_UMPU, col=c1, add=TRUE)
+```
+
+```{r}
+flat_UMPU_ps <- UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)]
+flat_FAB_ps <- FAB_ps[lower.tri(FAB_ps, diag = FALSE)]
+
+sorted_flat_UMPU <- sort(flat_UMPU_ps)
+sorted_flat_FAB <- sort(flat_FAB_ps)
+
+sorted_ps <- data.frame(cbind(sorted_flat_UMPU, sorted_flat_FAB))
+sorted_ps$rank <- 1:ttl
+
+max_idx <- max(sum(sorted_flat_UMPU<0.05), sum(sum(sorted_flat_FAB<0.05)))
+
+df <- sorted_ps %>%
+  gather(key = "variable", value = "value", -rank)
+
+ggplot(df, aes(x=rank, y=value)) + 
+        geom_line(size=2, aes(color = variable, linetype = variable)) + 
+        labs(title="Ranked (unmatched) P-value", x="rank", y = "p-value") +
+        xlim(0, max_idx) + 
+        ylim(0, 0.05)
+```
+
+
+```{r}
+h1 <- hist(F_r[null_idx_cbind], breaks=50, plot=FALSE)
+h2 <- hist(F_r[alter_idx_cbind], breaks=50, plot=FALSE)
+
+plot(h1, col=c1)
+plot(h2, col=c2)
+
+
+```
+
+```{r}
+group_idx <- group_idx[order(group_idx$col_idx, group_idx$row_idx), ]
+group_idx$FAB_ps <- flat_FAB_ps
+group_idx$UMPU_ps <- flat_UMPU_ps
+
+alpha = c(0.2)
+FAB_Discoveries = pfilter(group_idx$FAB_ps, alpha, matrix(group_idx$group_idx))
+UMPU_Discoveries = pfilter(group_idx$UMPU_ps, alpha, matrix(c(1:ttl)))
+
+sum(FAB_Discoveries)
+sum(UMPU_Discoveries)
+```
+
+
+
+

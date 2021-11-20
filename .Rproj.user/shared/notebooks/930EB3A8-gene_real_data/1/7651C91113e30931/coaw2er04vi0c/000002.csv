@@ -1,0 +1,4 @@
+"0","n_test <- 150"
+"0","NEW_test <- NEW_all[1:n_test, ]"
+"0","NEW <- NEW_all[(n_test+1):n, ]"
+"0","n <- n - n_test"

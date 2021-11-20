@@ -1,0 +1,7 @@
+"0",""
+"0","melted_diff <- melt(UMPU_ps >= FAB_ps)"
+"0","ggplot(data = melted_diff, aes(x=Var1, y=Var2, fill=value)) + "
+"0","    geom_tile() + ggtitle(""p_UMPU >= p_FAB"") +"
+"0","    theme(plot.title = element_text(hjust = 0.5)) +"
+"0","    xlab(""x"") + ylab(""y"") + "
+"0","    scale_fill_manual(values=c(""green"", ""blue""))"

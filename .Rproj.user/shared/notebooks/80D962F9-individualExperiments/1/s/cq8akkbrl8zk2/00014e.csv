@@ -1,0 +1,7 @@
+"0","# temp <- gen_psd_mtx(p=100, k=100, zero_ratio=0.0002, scale = 0.005)"
+"0","# tempCor <- cov2cor(temp)"
+"0","# hist(tempCor)"
+"0","# z_tempCor <- atanh(tempCor)"
+"0","# n=100"
+"0","# ps <- 1 - abs(pnorm( z_tempCor*sqrt(n-3), 0, 1) - pnorm( -z_tempCor*sqrt(n-3), 0, 1) )"
+"0","# hist(ps)"

@@ -1,0 +1,4 @@
+"0",""
+"0","UMPU_temp <- 1 - abs(pnorm(atanh(F_r)*sqrt(n-3)) - pnorm(-atanh(F_r)*sqrt(n-3)))"
+"0",""
+"0","hist(UMPU_temp[null_idx_cbind])"

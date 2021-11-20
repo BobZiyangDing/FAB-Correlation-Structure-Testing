@@ -1,0 +1,106 @@
+---
+title: "MassiveExperiment"
+output: html_document
+---
+
+```{r load-packages}
+source("Utils.R")
+source("func_sim_idpt.R")
+source("func_sim_boot.R")
+setwd("~/FABBrainConnectome/FAB_corr")
+set.seed(123)
+options(warn=-1)
+```
+
+```{r gen-data}
+data_info <- gen_sim_data(n=5000, ref_n=5000, p=50, num_in_group=50)
+test_data <- gen_sim_test_data(data_info, n=500, missing = 0.4)
+```
+
+
+```{r get-indpt-results}
+results <- func_sim_idpt(data_info)
+
+# make Rejection plots
+RejPlots <- makeRejPlot(results)
+plot(RejPlots$UMPU_rej)
+plot(RejPlots$FAB_rej)
+plot(RejPlots$Diff)
+plot(RejPlots$Truth)
+
+# make UMPU vs FAB Plots
+UMPUvsFABPlots <- makeUMPUvsFABPlot(results)
+plot(UMPUvsFABPlots)
+
+# make p value distribution plot
+PDistPlots <- makePDistPlot(results)
+# plot(PDistPlots$UMPU_null)
+# plot(PDistPlots$FAB_null)
+# plot(PDistPlots$UMPU_power)
+# plot(PDistPlots$FAB_power)
+plot(PDistPlots$Rank)
+```
+
+```{r}
+alphas <- seq(0, 1, 0.005)
+
+source("Utils.R")
+comp_result <- get_comp_results(alphas, test_data, data_info, results)
+
+ggplot() + 
+  geom_line(data = comp_result, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+  geom_line(data = comp_result, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+  ggtitle("Combine plot of BV cumulative counts") 
+```
+
+```{r}
+# write.csv(comp_result, file = "saved_result/idpt_result.csv")
+```
+
+
+
+```{r}
+data_info <- gen_sim_data(n=5000, ref_n=5000, p=50, num_in_group=50)
+test_data <- gen_sim_test_data(data_info, n=500, missing = 0.4)
+```
+
+
+```{r}
+source("func_sim_boot.R")
+results_boot <- func_sim_boot(data_info, R=2000)
+
+# make Rejection plots
+RejPlots <- makeRejPlot(results)
+plot(RejPlots$UMPU_rej)
+plot(RejPlots$FAB_rej)
+plot(RejPlots$Diff)
+plot(RejPlots$Truth)
+
+# make UMPU vs FAB Plots
+UMPUvsFABPlots <- makeUMPUvsFABPlot(results)
+plot(UMPUvsFABPlots)
+
+# make p value distribution plot
+PDistPlots <- makePDistPlot(results)
+# plot(PDistPlots$UMPU_null)
+# plot(PDistPlots$FAB_null)
+# plot(PDistPlots$UMPU_power)
+# plot(PDistPlots$FAB_power)
+plot(PDistPlots$Rank)
+```
+
+```{r}
+alphas <- seq(0, 1, 0.005)
+
+source("Utils.R")
+comp_result <- get_comp_results(alphas, test_data, data_info, results)
+
+ggplot() + 
+  geom_line(data = comp_result, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+  geom_line(data = comp_result, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+  ggtitle("Combine plot of BV cumulative counts") 
+```
+
+```{r}
+# write.csv(comp_result, file = "saved_result/boot_result.csv")
+```

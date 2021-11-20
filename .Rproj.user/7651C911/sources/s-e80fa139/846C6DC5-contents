@@ -1,0 +1,540 @@
+library(MASS)
+library(matrixcalc)
+library(clusterGeneration)
+library(pracma)
+library(MissMech)
+# library(R2jags)
+library(tidyverse)
+library(foreach)
+library(doParallel)
+library(hash)
+library(MLmetrics)
+
+###########################
+###### generate data ######
+###########################
+
+gen_sim_data <- function(n, ref_n, p, num_in_group){
+  ttl <- p*(p-1)/2
+  
+  num_groups <- ttl %/% num_in_group
+  num_null <- ttl %/% 2
+  
+  mu <- runif(p, -100, 100)
+  eigens <- runif(p, 1, 1000)
+  
+  Sigma <- as.matrix(c(0))
+  while(!is.positive.definite(Sigma)){
+    Sigma <- genPositiveDefMat(p, covMethod = 'eigen', eigenvalue = eigens)$Sigma
+  }
+  
+  zero_idx <- sample.int(ttl, num_null)
+  
+  null_idx_cbind <- NULL
+  alter_idx_cbind <- NULL
+  count <- 1
+  for(i in 2:p){
+    for(j in 1:(i-1)){
+      if(count %in% zero_idx){
+        Sigma[i, j] <- 0
+        Sigma[j, i] <- 0
+        null_idx_cbind <- rbind(null_idx_cbind, c(i, j))
+      }
+      else{
+        alter_idx_cbind <- rbind(alter_idx_cbind, c(i, j))
+      }
+      count = count + 1
+    }
+  }
+  
+  data_raw <- data.frame(mvrnorm(n, mu, Sigma))
+  data_ref <- data.frame(mvrnorm(ref_n, mu, Sigma))
+  
+  results <- hash()
+  results[["data_raw"]] <- data_raw
+  results[["data_ref"]] <- data_ref
+  results[["ttl"]] <- ttl
+  results[["mu"]] <- mu
+  results[["Sigma"]] <- Sigma
+  results[["zero_idx"]] <- zero_idx
+  results[["null_idx_cbind"]] <- null_idx_cbind
+  results[["alter_idx_cbind"]] <- alter_idx_cbind
+  results[["count"]] <- count
+  results[["num_groups"]] <- num_groups
+  results[["num_null"]] <- num_null
+  results[["n"]] <- n
+  results[["ref_n"]] <- ref_n
+  results[["p"]] <- p
+  results[["num_in_group"]] <- num_in_group
+
+  return(results)
+}
+
+gen_sim_test_data <- function(modeling_data_info, n, missing=0.5){
+  mu <- modeling_data_info$mu
+  Sigma <- modeling_data_info$Sigma
+  p <- modeling_data_info$p
+  num_missing <- round(missing * p)
+  test_data_truth <- data.frame(mvrnorm(n, mu, Sigma))
+  test_data_removed <- test_data_truth
+  
+  for(row in 1:n){
+    test_data_removed[row, sample.int(p, num_missing)] <- NA  
+  }
+  ttl_missing <- sum(is.na(test_data_removed))
+  
+  results <- hash()
+  results[["test_data_truth"]] <- test_data_truth
+  results[["test_data_removed"]] <- test_data_removed
+  results[["ttl_missing"]] <- ttl_missing
+  
+  return(results)
+}
+
+gen_indpt_data <- function(n, var_X, mu_X, var_y, mu_y, corr_Xy){
+  p <- length(var_X)
+  Sigma_X <- diag(var_X)
+  
+  std_y <- sqrt(var_y)
+  std_X <- sqrt(var_X)
+  
+  cov_Xy_vec <- std_y * std_X * corr_Xy
+  Sigma_Xy <- subMtx_to_fullMtx(Sigma_X, cov_Xy_vec, var_y)
+  
+  mu_Xy <- append(mu_X, mu_y)
+  Xy <- mvrnorm(n, mu_Xy, Sigma_Xy)
+  
+  return(as.matrix(Xy))
+}
+
+
+subMtx_to_fullMtx <- function(subMtx, new_vec, corner){
+  fullMtx <- rbind(subMtx, new_vec)
+  
+  fullMtx <- cbind(fullMtx, append(new_vec, corner))
+  return(fullMtx)
+}
+
+
+gen_nonindpt_data <- function(n, Sigma_Xy, mu_X, mu_y){
+  mu_Xy <- append(mu_X, mu_y)
+  Xy <- mvrnorm(n, mu_Xy, Sigma_Xy)
+  
+  return(as.matrix(Xy))
+}
+
+
+###########################
+########### Algo ##########
+###########################
+
+get_comp_results <- function(alphas, test_data, data_info, pval_results){
+  FAB_mses <- NULL
+  UMPU_mses <- NULL
+    
+  for(alpha in alphas){
+    FAB_mask <- ifelse(pval_results$FAB_ps <= alpha, 1, 0)
+    UMPU_mask <- ifelse(pval_results$UMPU_ps <= alpha, 1, 0)
+    
+    miss_data <- test_data$test_data_removed
+    truth_data <- test_data$test_data_truth
+    
+    mu_hat <- colMeans(data_info$data_raw)
+    Sigma_raw_hat <- cov(data_info$data_raw)
+    
+    FAB_Sigma_hat <- Sigma_raw_hat * FAB_mask
+    UMPU_Sigma_hat <- Sigma_raw_hat * UMPU_mask
+
+    colnames(FAB_Sigma_hat) <- seq(1, ncol(FAB_Sigma_hat))
+    rownames(FAB_Sigma_hat) <- seq(1, ncol(FAB_Sigma_hat))
+    colnames(UMPU_Sigma_hat) <- seq(1, ncol(UMPU_Sigma_hat))
+    rownames(UMPU_Sigma_hat) <- seq(1, ncol(UMPU_Sigma_hat))
+    
+    FAB_row_mses <- NULL
+    UMPU_row_mses <- NULL
+    
+    
+    
+    cores=detectCores()
+    cl <- makeCluster(cores[1]-1) #not to overload your computer
+    registerDoParallel(cl)
+    
+    row_results <- foreach(row=1:nrow(miss_data), 
+                           .combine=rbind, 
+                           .verbose=TRUE) %dopar% {
+                             row_miss <- miss_data[row, ]
+                             row_truth <- truth_data[row, ]
+                             
+                             FAB_row_mse <- get_row_mse(row_miss,
+                                                        row_truth,
+                                                        mu_hat,
+                                                        FAB_Sigma_hat)
+                             
+                             UMPU_row_mse <- get_row_mse(row_miss,
+                                                         row_truth,
+                                                         mu_hat,
+                                                         UMPU_Sigma_hat)
+                             
+                             
+                             FAB_row_mses <- append(FAB_row_mses, FAB_row_mse)
+                             UMPU_row_mses <- append(UMPU_row_mses, UMPU_row_mse)
+                             c(FAB_row_mses, UMPU_row_mses)
+                           }
+    
+    FAB_mse <- mean(row_results$FAB_row_mses)
+    UMPU_mse <- mean(row_results$UMPU_row_mses)
+    
+    
+    
+    
+    # for(row in 1:nrow(miss_data)){
+    #   row_miss <- miss_data[row, ]
+    #   row_truth <- truth_data[row, ]
+    # 
+    #   FAB_row_mse <- get_row_mse(row_miss,
+    #                              row_truth,
+    #                              mu_hat,
+    #                              FAB_Sigma_hat)
+    # 
+    #   UMPU_row_mse <- get_row_mse(row_miss,
+    #                               row_truth,
+    #                               mu_hat,
+    #                               UMPU_Sigma_hat)
+    # 
+    #   
+    #   FAB_row_mses <- append(FAB_row_mses, FAB_row_mse)
+    #   UMPU_row_mses <- append(UMPU_row_mses, UMPU_row_mse)
+    # }
+    # 
+    # FAB_mse <- mean(FAB_row_mses)
+    # UMPU_mse <- mean(UMPU_row_mses)
+    
+    FAB_mses <- append(FAB_mses, FAB_mse)
+    UMPU_mses <- append(UMPU_mses, UMPU_mse)
+    
+    print(alpha)
+  }
+  
+  result <- data.frame(FAB_mses, UMPU_mses, alphas)
+  return(result)
+}
+
+get_row_mse <- function(row_miss, row_truth, mu, Sig){
+  num_missing <- sum(is.na(row_miss))
+
+  miss_idx <- which(is.na(row_miss))
+  exist_idx <- which(!is.na(row_miss))
+
+  
+  y_2 <- as.numeric(row_miss[1, exist_idx])
+  mu_1 <- mu[miss_idx]
+  mu_2 <- mu[exist_idx]
+  Sig_12 <- Sig[miss_idx, exist_idx]
+  Sig_22 <- Sig[exist_idx, exist_idx]
+  
+  pred <- mu_1 + Sig_12 %*% inv(Sig_22) %*% (y_2 - mu_2)
+  truth <- row_truth[miss_idx]
+  row_mse <- mse(pred, truth) / num_missing
+
+  return(row_mse)
+}
+
+
+individual_MCMC <- function(j, Sigma_X, X, y, std_y, n.iter, n.burnin, alpha){
+  G_j <- nullspace(t(Sigma_X[j,]))
+  
+  decorr_X <- t(G_j) %*% X
+  decorr_Xy <- rbind(decorr_X, y)
+  
+  CorMatrix_decorr_Xy <- cor(t(decorr_Xy))
+  g_r <- CorMatrix_decorr_Xy[p, -p]
+  Fg_r <- atanh(g_r) # Test Statistics
+  
+  
+  new_Sigma_X <- t(G_j) %*% Sigma_X %*% G_j
+  new_var_X <- diag(new_Sigma_X)
+  new_std_X <- sqrt(new_var_X)
+  mix_coef <- G_j / new_std_X / std_y
+  
+  model_jags <- function(){
+    for(i in 1:(p-1)){
+      Fg_r[i] ~ dnorm(Fg_rho[i], n-3) # It uses precision rather than var here
+    }
+    
+    Fg_rho <- arctanh(g_rho)
+    g_rho <- t(mix_coef) %*% rho
+    rho <- tanh(F_rho)
+    F_rho ~ dmnorm( mu , eye) # It uses precision rather than var here
+    mu ~ ddirch( alpha )
+  }
+  
+  jags_data <- list(p=p, n=n, Fg_r=Fg_r, alpha=rep(alpha, p), mix_coef=mix_coef, eye=diag(p))
+  jags_sims_mv <- jags(data = jags_data,
+                       model.file = model_jags,
+                       parameters.to.save = c("F_rho"),
+                       n.iter = n.iter,
+                       n.burnin = n.burnin,
+                       progress.bar = "none")
+  
+  
+  Result <- as.mcmc(jags_sims_mv)
+  name <- str_c("F_rho.", j, ".")
+  samples <- (data.frame(as.matrix(Result))[name])[,1]
+  
+  return( c(mean(samples),  var(samples)) )
+}
+
+get_nonindpt_mv <- function(Sigma_X, X, y, p, n, std_y, n.iter, n.burnin, alpha){
+
+  cores=detectCores()
+  cl <- makeCluster(cores[1]-1) #not to overload your computer
+  registerDoParallel(cl)
+  
+  finalMatrix <- foreach(j=1:p, .combine=cbind, .packages='raster', .verbose=FALSE) %dopar% {
+    library(MASS)
+    library(matrixcalc)
+    library(clusterGeneration)
+    library(pracma)
+    library(R2jags)
+    library(tidyverse)
+    
+    G_j <- nullspace(t(Sigma_X[j,]))
+    
+    decorr_X <- t(G_j) %*% X
+    decorr_Xy <- rbind(decorr_X, y)
+    
+    CorMatrix_decorr_Xy <- cor(t(decorr_Xy))
+    g_r <- CorMatrix_decorr_Xy[p, -p]
+    Fg_r <- atanh(g_r) # Test Statistics
+    
+    
+    new_Sigma_X <- t(G_j) %*% Sigma_X %*% G_j
+    new_var_X <- diag(new_Sigma_X)
+    new_std_X <- sqrt(new_var_X)
+    mix_coef <- G_j / new_std_X / std_y
+    
+    model_jags <- function(){
+      for(i in 1:(p-1)){
+        Fg_r[i] ~ dnorm(Fg_rho[i], n-3) # It uses precision rather than var here
+      }
+      
+      Fg_rho <- arctanh(g_rho)
+      g_rho <- t(mix_coef) %*% rho
+      rho <- tanh(F_rho)
+      F_rho ~ dmnorm( mu , eye) # It uses precision rather than var here
+      mu ~ ddirch( alpha )
+    }
+    
+    jags_data <- list(p=p, n=n, Fg_r=Fg_r, alpha=rep(alpha, p), mix_coef=mix_coef, eye=diag(p))
+    jags_sims_mv <- jags(data = jags_data,
+                         model.file = model_jags,
+                         parameters.to.save = c("F_rho"),
+                         n.iter = n.iter,
+                         n.burnin = n.burnin,
+                         progress.bar = "none")
+    
+    
+    Result <- as.mcmc(jags_sims_mv)
+    name <- str_c("F_rho.", j, ".")
+    samples <- (data.frame(as.matrix(Result))[name])[,1]
+    c(mean(samples),  var(samples))
+  }
+  #stop cluster
+  stopCluster(cl)
+  
+
+  return(finalMatrix)
+}
+
+
+get_nonindpt_boot <- function(Cor_F_r, F_r, n, p){
+  cores=detectCores()
+  cl <- makeCluster(cores[1]-1) #not to overload your computer
+  registerDoParallel(cl)
+  
+  finalMatrix <- foreach(j=1:p, 
+                         .combine=cbind, 
+                         .packages = "pracma",
+                         .verbose=TRUE) %dopar% {
+    G_j <- nullspace(t(Cor_F_r[j,]))
+    indirect_info <- t(G_j) %*% F_r
+    
+    mu_MLE <- one %*% inv(t(G_j) %*% one) %*% indirect_info
+    psi2_MLE <- (p/(p-1)*var(indirect_info) - 1/(n-3))[1,1]
+    
+    temp <- G_j %*%inv(t(G_j)%*% Cor_F_r %*% G_j) %*% t(G_j)
+    V <- inv( diag(p)/psi2_MLE + temp)
+    m <- V %*% ( (1 / psi2_MLE)* as.matrix(rep(1, p)*mu_MLE) + temp %*% F_r)
+    
+    tilde_m <- V[j,j]
+    tilde_v <- m[j]
+    umpu_p <- 1 - abs(pnorm(F_r[j]*sqrt(n-3), 0, 1) - 
+                      pnorm(-F_r[j]*sqrt(n-3), 0, 1) )
+    fab_p <- 1 - abs(pnorm(F_r[j]*sqrt(n-3) + 2*tilde_m*sqrt(n-3)/tilde_v , 0, 1) - 
+                      pnorm(-F_r[j]*sqrt(n-3), 0, 1) )
+    c(fab_p, umpu_p)
+  }
+}
+
+
+get_nonindpt_gene <- function(Cor_F_r, F_r, n, p, one, verbose=FALSE){
+  cores=detectCores()
+  cl <- makeCluster(cores[1]-1) #not to overload your computer
+  registerDoParallel(cl)
+  
+  finalMatrix <- foreach(j=1:p, 
+                         .combine=cbind, 
+                         .packages = "pracma",
+                         .verbose=verbose) %dopar% {
+                           return(c(1,2))
+                         }
+  return(finalMatrix)
+}
+
+
+tensor_to_group_mtx <- function(whole_tensor, group_subset_info){
+  num_obs <- dim(group_subset_info)[1]
+  group_mtx <- NULL
+  for(obs_idx in 1:num_obs){
+    row_idx <- group_subset_info$row_idx[obs_idx]
+    col_idx <- group_subset_info$col_idx[obs_idx]
+    group_mtx <- rbind(group_mtx, whole_tensor[, row_idx, col_idx])
+  }
+  
+  
+  return(group_mtx)
+}
+
+
+###########################
+######## Make Plots #######
+###########################
+
+
+makeRejPlot <- function(algoResults){
+  
+  
+  UMPU_ps <- results$UMPU_ps 
+  FAB_ps <- results$FAB_ps 
+  Sigma <- results$Sigma
+
+  UMPU_rej <- ifelse(UMPU_ps<0.05, "REJ", "NULL")
+  FAB_rej <- ifelse(FAB_ps<0.05, "REJ", "NULL")
+  truth <- ifelse(Sigma==0, "NULL", "ALTER")
+  
+  melted_UMPU_rej <- melt(UMPU_rej)
+  UMPU_rej <- ggplot(data = melted_UMPU_rej, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("UMPU Rejection") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+  
+  melted_FAB_rej <- melt(FAB_rej)
+  FAB_rej <- ggplot(data = melted_FAB_rej, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("FAB Rejection") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+  
+  melted_diff <- melt(UMPU_ps >= FAB_ps)
+  Diff <- ggplot(data = melted_diff, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("p_UMPU >= p_FAB") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+  
+  
+  melted_truth <- melt(truth)
+  Truth <- ggplot(data = melted_truth, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("Ground Truth") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+  
+  results <- hash()
+  results[["UMPU_rej"]] <- UMPU_rej
+  results[["FAB_rej"]] <- FAB_rej
+  results[["Diff"]] <- Diff
+  results[["Truth"]] <- Truth
+  
+  return(results)
+}
+
+
+makeUMPUvsFABPlot <- function(algoResults){
+  
+  UMPU_ps <- results$UMPU_ps 
+  FAB_ps <- results$FAB_ps 
+  Sigma <- results$Sigma 
+  
+  truth <- ifelse(Sigma==0, "NULL", "ALTER")
+  UMPU_FAB <- data.frame(UMPU = UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)],
+                         FAB = FAB_ps[lower.tri(FAB_ps, diag = FALSE)],
+                         Truth = truth[lower.tri(truth, diag = FALSE)])
+  
+  UMPUvsFAB <- ggplot(UMPU_FAB, aes(x=UMPU, y=FAB, color=Truth)) + 
+    geom_point(alpha=0.3, size=4, aes(shape=Truth)) +
+    labs(title="UMPU_p vs FAB_p", x="UMPU p-value", y = "FAB p-value") +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+  return(UMPUvsFAB)
+}
+
+
+makePDistPlot <- function(algoResults){
+  
+  UMPU_ps <- results$UMPU_ps 
+  FAB_ps <- results$FAB_ps 
+  Sigma <- results$Sigma 
+  null_idx_cbind <- results$null_idx_cbind 
+  alter_idx_cbind <- results$alter_idx_cbind
+
+  c1 <- rgb(100,100,255, max = 255, alpha = 100, names = "lt.blue")
+  c2 <- rgb(255,100,100, max = 255, alpha = 100, names = "lt.pink")
+
+  UMPU_true_null <- UMPU_ps[null_idx_cbind]
+  FAB_true_null <- FAB_ps[null_idx_cbind]
+
+  UMPU_null <- hist(UMPU_true_null, col=c1)
+  FAB_null <- hist(FAB_true_null, col=c2)
+
+  UMPU_alter <- UMPU_ps[alter_idx_cbind]
+  FAB_alter <- FAB_ps[alter_idx_cbind]
+
+  UMPU_power <- hist(UMPU_alter, col=c1)
+  FAB_power <- hist(FAB_alter, col=c2)
+  
+  flat_UMPU_ps <- UMPU_alter[lower.tri(UMPU_ps, diag = FALSE)]
+  flat_FAB_ps <- FAB_alter[lower.tri(FAB_ps, diag = FALSE)]
+  
+  sorted_flat_UMPU <- sort(flat_UMPU_ps)
+  sorted_flat_FAB <- sort(flat_FAB_ps)
+  
+  sorted_ps <- data.frame(cbind(sorted_flat_UMPU, sorted_flat_FAB))
+  sorted_ps$rank <- 1:dim(sorted_ps)[1]
+  
+  max_idx <- max(sum(sorted_flat_UMPU<0.05), sum(sum(sorted_flat_FAB<0.05)))
+  
+  df <- sorted_ps %>%
+    gather(key = "variable", value = "value", -rank)
+  
+  Rank <- ggplot(df, aes(x=rank, y=value)) +
+    geom_line(size=2, aes(color = variable, linetype = variable)) +
+    labs(title="Ranked (unmatched) false null p-value", x="rank", y = "p-value") +
+    xlim(0, max_idx) +
+    ylim(0, 0.05)
+  
+  results <- hash()
+  results[["UMPU_null"]] <- UMPU_null
+  results[["FAB_null"]] <- FAB_null
+  results[["UMPU_power"]] <- UMPU_power
+  results[["FAB_power"]] <- FAB_power
+  results[["Rank"]] <- Rank
+
+  return(results)
+}
+
+
+
+
+

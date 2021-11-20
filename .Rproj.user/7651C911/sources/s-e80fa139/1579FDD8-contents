@@ -1,0 +1,160 @@
+---
+title: "FAB_indpt"
+author: "Ziyang Ding"
+date: "March 12, 2021"
+output: html_document
+---
+
+
+```{r}
+source("Utils.R")
+library(DirichletReg)
+library(ggplot2)
+set.seed(1234)
+```
+
+
+```{r generate-uncorrelated-data-huge}
+n <- 10000
+p <- 2000
+var_X <- runif(p, 0, 100)
+mu_X <- runif(p, -100, 100)
+var_y <- c(25)
+mu_y <- c(0)
+corr_Xy <- rep(0.01, p)
+
+zero_idx <- sort(sample.int(p, 1500))
+corr_Xy[zero_idx] <- 0
+
+
+uncor_Xy <- gen_indpt_data(n, var_X, mu_X, var_y, mu_y, corr_Xy)
+
+```
+
+
+
+```{r obtain-Fr-frequentist-part}
+r <- cor(uncor_Xy)[1:p, p+1]
+F_r <- atanh(r)
+```
+
+```{r obtain-tilde-bayesian-part}
+G_full <- diag(p+1)
+
+FAB_ps <- c()
+UMPU_ps <- c()
+pos_ms <- c()
+pos_vs <- c()
+
+for (j in 1:p){
+  indirect_info <- F_r[-j]
+  mu_MLE <- mean(indirect_info)
+  psi2_MLE <- p/(p-1)*var(indirect_info) - 1/(n-3)
+  
+  tilde_m <- mu_MLE
+  tilde_v <- psi2_MLE
+  umpu_p <- 1 - abs(pnorm(F_r[j]*sqrt(n-3), 0, 1) - 
+                    pnorm(-F_r[j]*sqrt(n-3), 0, 1) )
+  fab_p <- 1 - abs(pnorm(F_r[j]*sqrt(n-3) + 2*tilde_m*sqrt(n-3)/tilde_v , 0, 1) - 
+                    pnorm(-F_r[j]*sqrt(n-3), 0, 1) )
+  
+  
+  # Record Data
+  FAB_ps <- append(FAB_ps, fab_p)
+  UMPU_ps <- append(UMPU_ps, umpu_p)
+  pos_ms <- append(pos_ms, tilde_m)
+  pos_vs <- append(pos_vs, tilde_v)
+}
+
+
+combined_ps <- rbind(UMPU_ps, FAB_ps)
+
+combined_df <- data.frame(t(combined_ps))
+
+combined_df$label <- (1:p) %in% zero_idx
+combined_df$label <- ifelse(combined_df$label == TRUE, "True Null", "False Null")
+
+
+ggplot(combined_df, aes(x=UMPU_ps, y=FAB_ps, color=label, shape=label)) + 
+                  geom_point(alpha=0.2, size=5) + 
+                  labs(title="UMPU vs FAB p-value",
+                       x="UMPU p-value", y = "FAB p-value") + 
+                  geom_abline(intercept = 0, slope = 1)
+
+
+ggsave("Idpt_UMPU_FAB.pdf", height = 4, width = 5)
+
+```
+
+
+```{r}
+# sorted_ps <- combined_ps[,order(combined_ps[1,])]
+# 
+# plot(sorted_ps[1, ],type = "o", col = "red", xlab = "Rank", ylab = "p-value",
+#    main = "P-value vs Rank")
+# lines(sorted_ps[2, ], type = "o", col = "blue")
+
+
+sorted_UMPU <- sort(UMPU_ps)
+sorted_FAB <- sort(FAB_ps)
+
+sorted_ps <- data.frame(cbind(sorted_UMPU, sorted_FAB))
+sorted_ps$rank <- 1:p
+  
+
+
+df <- sorted_ps %>%
+  select(rank, sorted_FAB, sorted_UMPU) %>%
+  gather(key = "variable", value = "value", -rank)
+
+
+
+ggplot(df, aes(x=rank, y=value)) + 
+        geom_line(size=2, aes(color = variable, linetype = variable)) + 
+        labs(title="Ranked (unmatched) P-value", x="rank", y = "p-value")
+        
+
+
+ggsave("Idpt_FAB_smaller.pdf", height = 4, width = 5)
+
+```
+
+```{r}
+true_alter <- data.frame(t(combined_ps[, -zero_idx]))
+true_null <- data.frame(t(combined_ps[, zero_idx]))
+
+
+pdf(file = "idpt_alphalevel_power.pdf",   # The directory you want to save the file in
+    width = 10, # The width of the plot in inches
+    height = 10)
+
+par(mfrow=c(2,2))
+
+hist(true_null$UMPU_ps, main = "Distribution of UMPU p-value under true null hypothesis", 
+     xlab = "UMPU P-value", 
+     ylab = "Frequency",
+     breaks = 10,
+     col="blue")
+
+hist(true_null$FAB_ps, main = "Distribution of FAB p-value under true null hypothesis", 
+     xlab = "FAB P-value", 
+     ylab = "Frequency",
+     breaks = 10,
+     col = "#ADD8E6")
+
+
+hist(true_alter$UMPU_ps, main = "Distribution of UMPU p-value under false null hypothesis", 
+     xlab = "UMPU P-value", 
+     ylab = "Frequency",
+     breaks = 10)
+
+
+hist(true_alter$FAB_ps, main = "Distribution of FAB p-value under false null hypothesis", 
+     xlab = "FAB P-value", 
+     ylab = "Frequency",
+     breaks = 10)
+
+
+dev.off()
+```
+

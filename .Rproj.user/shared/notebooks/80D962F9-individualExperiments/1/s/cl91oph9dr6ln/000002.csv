@@ -1,0 +1,2 @@
+"0","data_info_boot <- gen_sim_data(n=5000, ref_n=5000, p=50, num_in_group=50)"
+"0","# test_data_boot <- gen_sim_test_data(data_info_boot, n=1000, missing = 0.4)"

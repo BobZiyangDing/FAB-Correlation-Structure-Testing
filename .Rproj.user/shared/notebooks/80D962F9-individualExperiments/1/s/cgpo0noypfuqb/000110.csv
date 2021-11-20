@@ -1,0 +1,6 @@
+"0","boot_UMPU_FAB_Scatter <- UMPUvsFABPlots_boot"
+"0","boot_UMPU_FAB_Power_Line <- PDistPlots_boot$Rank"
+"0",""
+"0","# # "
+"0","ggsave(plot = boot_UMPU_FAB_Rej_Plot, width = 10, height = 5, dpi = 300, filename = ""image/boot_UMPU_FAB_Rej_Plot.pdf"")"
+"0","ggsave(plot = RejPlots_boot$rej_diff, width = 10, height = 5, dpi = 300, filename = ""image/boot_Rej_diff_Plot.pdf"")"

@@ -1,0 +1,4 @@
+"0","h1 <- hist(F_r[null_idx_cbind], breaks=50, plot=FALSE)"
+"0","h2 <- hist(F_r[alter_idx_cbind], breaks=50, plot=FALSE)"
+"0",""
+"0","plot(h1, col=c1)"

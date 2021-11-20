@@ -1,0 +1,8 @@
+"0",""
+"0","UMPU_rej <- ifelse(UMPU_ps<0.05, 1, 0)"
+"0","FAB_rej <- ifelse(FAB_ps<0.05, 1, 0)"
+"0","truth <- ifelse(Sigma==0, 0, 1)"
+"0",""
+"0","melted_UMPU_rej <- melt(UMPU_rej)"
+"0","ggplot(data = melted_UMPU_rej, aes(x=Var1, y=Var2, fill=value)) + "
+"0","  geom_tile()"

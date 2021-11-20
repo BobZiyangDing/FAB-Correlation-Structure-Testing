@@ -1,0 +1,8 @@
+"0",""
+"0",""
+"0","UMPU_FAB <- data.frame(UMPU = UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)],"
+"0","                       FAB = FAB_ps[lower.tri(FAB_ps, diag = FALSE)])"
+"0",""
+"0","ggplot(UMPU_FAB, aes(x=UMPU, y=FAB)) +"
+"0","        geom_point(size=1, alpha=0.05) +"
+"0","        labs(title=""UMPU vs FAB"", x=""UMPU p-value"", y = ""FAB p-value"")"

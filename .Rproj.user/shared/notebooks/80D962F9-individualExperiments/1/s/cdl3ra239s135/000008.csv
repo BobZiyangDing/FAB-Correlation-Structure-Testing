@@ -1,0 +1,8 @@
+"0","data_info <- gen_sim_data(n=100, ref_n=100, p=100, num_in_group=100, k=50, zero_ratio =0.001)#0.0029"
+"1","[1]"
+"1"," ""There are  2231 nulls; and  2719  non-nulls"""
+"1","
+"
+"0","# test_data <- gen_sim_test_data(data_info, n=1000, missing = 0.4)"
+"0",""
+"0",""

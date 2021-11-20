@@ -1,0 +1,10 @@
+"0","colnames(boot_FAB_rej) <- colnames(F_r)"
+"0","rownames(boot_FAB_rej) <- rownames(F_r)"
+"0","colnames(boot_UMPU_rej) <- colnames(F_r)"
+"0","rownames(boot_UMPU_rej) <- rownames(F_r)"
+"0",""
+"0","truth_rej_idx <- cbind(TRUTH$Gene1, TRUTH$Gene2)"
+"0","sum(boot_FAB_rej[truth_rej_idx])"
+"2","Error in sum(boot_FAB_rej[truth_rej_idx]) : 
+  invalid 'type' (character) of argument
+"

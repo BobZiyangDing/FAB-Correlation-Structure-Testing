@@ -1,0 +1,138 @@
+---
+title: "MassiveExperiment"
+output: html_document
+---
+
+```{r load-packages}
+library(FedData)
+library(gridExtra)
+library(cowplot)
+library(grid)
+source("Utils.R")
+source("func_sim_idpt.R")
+source("func_sim_boot.R")
+setwd("~/FABBrainConnectome/FAB_corr")
+set.seed(123)
+options(warn=-1)
+```
+
+```{r idpt massive_results}
+
+n_choice <- c(500, 1000, 5000)
+q_choice <- c(50, 100, 200)
+times <- hash()
+times[["50"]] <- 10
+times[["100"]] <- 8
+times[["200"]] <- 5
+
+massive_results <- list()
+
+
+idx = 1
+for(n in n_choice)
+{
+  for(q in q_choice)
+  {
+    time <- times[[toString(q)]]
+    print(time)
+    key <- paste("n", n, "q", q , sep = "-")
+    
+    massive_result <- massiveConfusionExp(n, q, time)
+    massive_results[[key]] <- massive_result
+    idx = idx + 1
+    }
+}  
+# save(massive_results, file = "idpt_massive_results.RData")
+
+```
+
+```{r boot massive_results}
+
+n_choice <- c(500, 1000, 5000)
+q_choice <- c(50, 100, 200)
+times <- hash()
+times[["50"]] <- 10
+times[["100"]] <- 8
+times[["200"]] <- 5
+
+boot_massive_results <- list()
+
+idx = 1
+for(n in n_choice)
+{
+  for(q in q_choice)
+  {
+    time <- times[[toString(q)]]
+    print(time)
+    key <- paste("n", n, "q", q , sep = "-")
+    
+    boot_massive_result <- massiveConfusionExp(n, q, time, "boot")
+    boot_massive_results[[key]] <- boot_massive_result
+    idx = idx + 1
+    }
+}  
+save(boot_massive_results, file = "boot_massive_results.RData")
+boot_massive_results
+```
+
+```{r boot massive asymptotics}
+n_choice <- c(500, 1000, 5000)
+B_choice <- c(200, 500, 1000, 2000)
+
+boot_asymptotic_null_FABp <- list()
+for(n in n_choice)
+{
+  for(B in B_choice)
+  {
+    key <- paste("n", n, "B", B , sep = "-")
+    data_info_boot <- gen_sim_data(n=n, ref_n=5000, p=50, num_in_group=50)
+    results_boot <- func_sim_boot(data_info_boot, R=B)
+    FAB_null <- makeNullBoot(results_boot, n, B)
+    boot_asymptotic_null_FABp[[key]] <- FAB_null
+    print(paste("Finished ", key, sep="") )
+    }
+}
+
+# 
+# title <- cowplot::ggdraw() + 
+#   cowplot::draw_label(
+#     "FAB p-value Under Null Hypothesis for Different n, B",
+#     fontface = 'bold',
+#     x = 0,
+#     hjust = 0.5
+#   ) +
+#   theme(
+#     plot.margin = margin(0, 0, 0, 7)
+#   )
+
+
+y.grob <- textGrob("Density", rot=90, gp=gpar(fontsize=15))
+x.grob <- textGrob("FAB p-value Under Null", gp=gpar(fontsize=15))
+title.grob <- textGrob("FAB p-value Under Null Hypothesis for Different n, B", gp=gpar(fontsize=18))
+
+content <- cowplot::plot_grid(
+    boot_asymptotic_null_FABp$`n-500-B-200`  + theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-1000-B-200` + theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-5000-B-200` + theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-500-B-500`  + theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-1000-B-500` + theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-5000-B-500` + theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-500-B-1000` + theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-1000-B-1000`+ theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-5000-B-1000`+ theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-500-B-2000` + theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-1000-B-2000`+ theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ), 
+    boot_asymptotic_null_FABp$`n-5000-B-2000`+ theme(axis.ticks.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank() ),
+    nrow = 4,
+    labels = "auto")
+
+FinalPlot <- grid.arrange(arrangeGrob(content, left = y.grob, bottom = x.grob, top = title.grob))
+
+
+ggsave(plot = FinalPlot, width = 9, height = 12, dpi = 300, filename = "image/boot_asymptotic_null_FABp.pdf")
+
+
+#save(boot_asymptotic_null_FABp, file = "boot_asymptotic_null_FABp.RData")
+
+```
+

@@ -1,0 +1,27 @@
+{
+    "id": "9846062A",
+    "path": "/home/grad/zd26/FABBrainConnectome/FAB_corr/massiveExperiment.Rmd",
+    "project_path": "massiveExperiment.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1630029237934.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "48,11",
+        "scrollLine": "42"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1629510226,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1630029244648,
+    "read_only": false,
+    "read_only_alternatives": []
+}

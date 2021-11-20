@@ -1,0 +1,161 @@
+---
+title: "MassiveExperiment"
+output: html_document
+---
+
+```{r load-packages}
+library(FedData)
+library(gridExtra)
+source("Utils.R")
+source("func_sim_idpt.R")
+source("func_sim_boot.R")
+setwd("~/FABBrainConnectome/FAB_corr")
+set.seed(123)
+options(warn=-1)
+```
+
+```{r gen-data}
+data_info <- gen_sim_data(n=5000, ref_n=5000, p=100, num_in_group=50)
+# test_data <- gen_sim_test_data(data_info, n=1000, missing = 0.4)
+```
+
+```{r get-indpt-results}
+results <- func_sim_idpt(data_info)
+
+# make Rejection plots
+RejPlots <- makeRejPlot(results)
+# plot(RejPlots$UMPU_rej)
+# plot(RejPlots$FAB_rej)
+# plot(RejPlots$Truth)
+
+# make UMPU vs FAB Plots
+UMPUvsFABPlots <- makeUMPUvsFABPlot(results)
+# plot(UMPUvsFABPlots)
+
+# make p value distribution plot
+PDistPlots <- makePDistPlot(results)
+# plot(PDistPlots$UMPU_null)
+# plot(PDistPlots$FAB_null)
+# plot(PDistPlots$UMPU_power)
+# plot(PDistPlots$FAB_power)
+# plot(PDistPlots$Rank)
+
+UMPU_FAB_Rej_legend <- g_legend(RejPlots$UMPU_rej)
+
+idpt_UMPU_FAB_Rej_Plot <- grid.arrange(arrangeGrob(RejPlots$UMPU_rej + theme(legend.position="none"),
+                                              RejPlots$FAB_rej + theme(legend.position="none"),
+                                              nrow=1),
+                                       UMPU_FAB_Rej_legend, nrow=2,heights=c(10, 1))
+idpt_UMPU_FAB_Null_Dist <- grid.arrange(PDistPlots$UMPU_null, PDistPlots$FAB_null, nrow = 1)
+idpt_UMPU_FAB_Alter_Dist <- grid.arrange(PDistPlots$UMPU_power, PDistPlots$FAB_power, nrow = 1)
+idpt_UMPU_FAB_Scatter <- UMPUvsFABPlots
+idpt_UMPU_FAB_Power_Line <- PDistPlots$Rank
+
+# 
+ggsave(plot = idpt_UMPU_FAB_Rej_Plot, width = 10, height = 5, dpi = 300, filename = "image/idpt_UMPU_FAB_Rej_Plot.pdf")
+ggsave(plot = idpt_UMPU_FAB_Null_Dist, width = 10, height = 3, dpi = 300, filename = "image/idpt_UMPU_FAB_Null_Dist.pdf")
+ggsave(plot = idpt_UMPU_FAB_Alter_Dist, width = 10, height = 3, dpi = 300, filename = "image/idpt_UMPU_FAB_Alter_Dist.pdf")
+ggsave(plot = idpt_UMPU_FAB_Scatter, width = 7, height = 5, dpi = 300, filename = "image/idpt_UMPU_FAB_Scatter.pdf")
+ggsave(plot = idpt_UMPU_FAB_Power_Line, width = 7, height = 5, dpi = 300, filename = "image/idpt_UMPU_FAB_Power_Line.pdf")
+
+```
+
+```{r idpt imputation screening}
+# alphas <- seq(0, 0.2, 0.005)
+# source("Utils.R")
+# comp_result_par <- get_comp_results_par(alphas, test_data, data_info, results)
+# 
+# ggplot() + 
+#   geom_line(data = comp_result_par, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+#   geom_line(data = comp_result_par, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+#   ggtitle("Independent FAB vs UMPU imputation precision") 
+```
+
+```{r}
+# write.csv(comp_result_par, file = "saved_result/idpt_result.csv")
+# library(ggplot2)
+# temp <- read_csv("saved_result/idpt_result.csv")
+# ggplot() + 
+#   geom_line(data = temp, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+#   geom_line(data = temp, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+#   ggtitle("Independent FAB vs UMPU imputation precision") + 
+#   xlim(0, 0.05)
+```
+
+
+
+
+```{r boot data}
+data_info_boot <- gen_sim_data(n=5000, ref_n=5000, p=100, num_in_group=50)
+# test_data_boot <- gen_sim_test_data(data_info_boot, n=1000, missing = 0.4)
+```
+
+
+
+```{r boot plot}
+results_boot <- func_sim_boot(data_info_boot, R=5000)
+
+# make Rejection plots
+RejPlots_boot <- makeRejPlot(results_boot)
+# plot(RejPlots_boot$UMPU_rej)
+# plot(RejPlots_boot$FAB_rej)
+# plot(RejPlots_boot$Diff)
+# plot(RejPlots_boot$Truth)
+
+# make UMPU vs FAB Plots
+UMPUvsFABPlots_boot <- makeUMPUvsFABPlot(results_boot)
+# plot(UMPUvsFABPlots_boot)
+
+# make p value distribution plot
+PDistPlots_boot <- makePDistPlot(results_boot)
+# plot(PDistPlots$UMPU_null)
+# plot(PDistPlots$FAB_null)
+# plot(PDistPlots$UMPU_power)
+# plot(PDistPlots$FAB_power)
+# plot(PDistPlots_boot$Rank)
+
+UMPU_FAB_Rej_legend <- g_legend(RejPlots_boot$UMPU_rej)
+
+boot_UMPU_FAB_Rej_Plot <- grid.arrange(arrangeGrob(RejPlots_boot$UMPU_rej + theme(legend.position="none"),
+                                                   RejPlots_boot$FAB_rej + theme(legend.position="none"),
+                                                   nrow=1),
+                                       UMPU_FAB_Rej_legend, nrow=2, heights=c(10, 1))
+boot_UMPU_FAB_Null_Dist <- grid.arrange(PDistPlots_boot$UMPU_null, PDistPlots_boot$FAB_null, nrow = 1)
+boot_UMPU_FAB_Alter_Dist <- grid.arrange(PDistPlots_boot$UMPU_power, PDistPlots_boot$FAB_power, nrow = 1)
+boot_UMPU_FAB_Scatter <- UMPUvsFABPlots_boot
+boot_UMPU_FAB_Power_Line <- PDistPlots_boot$Rank
+
+
+ggsave(plot = boot_UMPU_FAB_Rej_Plot, width = 10, height = 5, dpi = 300, filename = "image/boot_UMPU_FAB_Rej_Plot.pdf")
+ggsave(plot = boot_UMPU_FAB_Null_Dist, width = 10, height = 3, dpi = 300, filename = "image/boot_UMPU_FAB_Null_Dist.pdf")
+ggsave(plot = boot_UMPU_FAB_Alter_Dist, width = 10, height = 3, dpi = 300, filename = "image/boot_UMPU_FAB_Alter_Dist.pdf")
+ggsave(plot = boot_UMPU_FAB_Scatter, width = 7, height = 5, dpi = 300, filename = "image/boot_UMPU_FAB_Scatter.pdf")
+ggsave(plot = boot_UMPU_FAB_Power_Line, width = 7, height = 5, dpi = 300, filename = "image/boot_UMPU_FAB_Power_Line.pdf")
+
+```
+
+```{r boot imputation screening}
+# alphas <- seq(0, 0.2, 0.005)
+# 
+# source("Utils.R")
+# comp_result_par_boot <- get_comp_results_par(alphas, test_data_boot, data_info_boot, results_boot)
+# 
+# 
+# ggplot() + 
+#   geom_line(data = comp_result_par_boot, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+#   geom_line(data = comp_result_par_boot, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+#   ggtitle("Bootstrap FAB vs UMPU imputation precision") 
+```
+
+```{r}
+# write.csv(comp_result_par_boot, file = "saved_result/boot_result.csv")
+
+# write.csv(comp_result_par, file = "saved_result/boot_result.csv")
+# library(ggplot2)
+# temp <- read_csv("saved_result/boot_result.csv")
+# ggplot() + 
+#   geom_line(data = temp, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+#   geom_line(data = temp, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+#   ggtitle("Independent FAB vs UMPU imputation precision") + 
+#   xlim(0, 0.05)
+```

@@ -1,0 +1,293 @@
+---
+title: "Application_covStruct"
+output: html_document
+---
+
+Suppose we have a free dataset for reference, then we can do FAB corr test for free. This gives a simulation for such a situation and we can test the cov structure. This is to use bootstrap for the purpose.
+
+```{r setup, include=FALSE}
+library(Rcpp)
+library(fabricatr)
+library(mltools)
+library(onehot)
+library(mgcv)
+library(tidyverse)
+library(foreach)
+library(doParallel)
+library(kableExtra)
+library(boot)
+library(tensorr)
+library(reshape2)
+library(dvmisc)
+source("Utils.R")
+source("pfilter.R")
+sourceCpp("Cov_struct_func.cpp")
+setwd("~/FABBrainConnectome/FAB_corr")
+set.seed(123)
+options(warn=-1)
+```
+
+```{r params}
+n <- 10000
+p <- 200
+ref_n <- 5000
+ttl <- p*(p-1)/2
+
+num_in_group <- 50
+num_groups <- ttl %/% num_in_group 
+
+num_null <- ttl %/% 2
+```
+
+
+```{r generate-uncorrelated-data-huge, message=FALSE, warning=FALSE}
+
+mu <- runif(p, -100, 100)
+eigens <- runif(p, 1, 1000)
+Sigma <- genPositiveDefMat(p, covMethod = 'eigen', eigenvalue = eigens)$Sigma
+
+zero_idx <- sample.int(ttl, num_null)
+
+null_idx_cbind <- NULL
+alter_idx_cbind <- NULL
+count <- 1
+for(i in 2:p){
+  for(j in 1:(i-1)){
+    if(count %in% zero_idx){
+      Sigma[i, j] <- 0
+      Sigma[j, i] <- 0
+      null_idx_cbind <- rbind(null_idx_cbind, c(i, j))
+    }
+    else{
+      alter_idx_cbind <- rbind(alter_idx_cbind, c(i, j))
+    }
+    count = count + 1
+  }
+}
+
+data_raw <- mvrnorm(n, mu, Sigma)
+data_ref <- mvrnorm(ref_n, mu, Sigma)
+
+dim(data_raw)
+dim(data_ref)
+```
+
+```{r}
+get_cor <- function(data, i){
+  sub_data <- data[i, ]
+  return(atanh(cor(sub_data)))
+}
+```
+
+```{r}
+F_r <- atanh(cor(data_raw))
+F_r_ref <- atanh(cor(data_ref, use = "pairwise.complete.obs"))
+```
+
+
+```{r try-bootstrap}
+cores=detectCores()
+R = 2000
+bootobject <- boot(data = data_ref, statistic = get_cor, R=R, parallel = "multicore", ncpus = cores)
+
+bootsample <- array(0, c(R, p, p))
+for(i in 1:R){
+  bootsample[i, ,] = matrix(bootobject$t[i, ], nrow=p)
+}
+
+rm(bootobject)
+```
+
+#################################################################################
+Factor Loading Matrix need to be independent from what it was
+#################################################################################
+
+```{r This is actually wrong but original}
+
+group_idx <- NULL
+for(i in 2:p){
+  for(j in 1:(i-1)){
+    group_idx <- rbind(group_idx, c(i, j, F_r_ref[i, j]))
+  }
+}
+group_idx <- data.frame(group_idx)
+
+colnames(group_idx) <- c("row_idx", "col_idx", "F_r_value")
+group_idx <- group_idx[order(group_idx$F_r_value), ]
+group_idx$group_idx <- as.numeric(split_quantile(x = 1:ttl, type = num_groups))
+
+```
+
+```{r This should be right}
+# num_groups <- 1000
+# group_id_list <- data.frame(split_quantile(x = seq(1, ttl), type = num_groups))
+# rows <- sample(nrow(group_id_list))
+# group_id_list <- group_id_list[rows, ]
+# # group_mat <- matrix(as.numeric(split_quantile(x = F_r, type = num_groups)), nrow=p)
+# 
+# group_idx <- NULL
+# for(i in 2:p){
+#   for(j in 1:(i-1)){
+#     group_idx <- rbind(group_idx, c(i, j))
+#   }
+# }
+# 
+# group_idx <- data.frame(group_idx)
+# group_idx$group_idx <- group_id_list
+# colnames(group_idx) <- c("row_idx", "col_idx", "group_idx")
+```
+
+#################################################################################
+End of revision
+#################################################################################
+
+```{r}
+
+UMPU_ps <- diag(p)
+FAB_ps <- diag(p)
+
+
+for(idx in 1:num_groups){
+  group_subset <- subset(group_idx, group_idx==idx)
+  group_mtx <- tensor_to_group_mtx(bootsample, group_subset)
+  group_Cor_F_r <- cor(t(group_mtx))
+  group_F_r <- F_r[cbind(group_subset$row_idx, group_subset$col_idx)]
+  group_p <- dim(group_subset)[1]
+  group_result <- getFABnUMPUpvals(group_Cor_F_r, group_F_r, n, group_p)
+  
+  for(i in 1:group_p){
+    row_idx = group_subset$row_idx[i]
+    col_idx = group_subset$col_idx[i]
+    UMPU_ps[row_idx, col_idx] = group_result[1, i]
+    UMPU_ps[col_idx, row_idx] = group_result[1, i]
+    FAB_ps[row_idx, col_idx] = group_result[2, i]
+    FAB_ps[col_idx, row_idx] = group_result[2, i]
+  }
+  if(idx %% 500 == 0){
+    print(idx)
+  }
+}
+
+```
+
+
+```{r}
+
+UMPU_rej <- ifelse(UMPU_ps<0.05, "REJ", "NULL")
+FAB_rej <- ifelse(FAB_ps<0.05, "REJ", "NULL")
+truth <- ifelse(Sigma==0, "NULL", "ALTER")
+
+melted_UMPU_rej <- melt(UMPU_rej)
+UMPU_rej <- ggplot(data = melted_UMPU_rej, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() + ggtitle("UMPU Rejection") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("x") + ylab("y") + 
+  scale_fill_manual(values=c("green", "blue"))
+
+melted_FAB_rej <- melt(FAB_rej)
+FAB_rej <- ggplot(data = melted_FAB_rej, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() + ggtitle("FAB Rejection") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("x") + ylab("y") + 
+  scale_fill_manual(values=c("green", "blue"))
+
+melted_diff <- melt(UMPU_ps >= FAB_ps)
+Diff <- ggplot(data = melted_diff, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() + ggtitle("p_UMPU >= p_FAB") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("x") + ylab("y") + 
+  scale_fill_manual(values=c("green", "blue"))
+
+
+melted_truth <- melt(truth)
+Truth <- ggplot(data = melted_truth, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() + ggtitle("Ground Truth") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("x") + ylab("y") + 
+  scale_fill_manual(values=c("green", "blue"))
+
+plot(UMPU_rej)
+plot(FAB_rej)
+plot(Diff)
+plot(Truth)
+
+UMPU_FAB <- data.frame(UMPU = UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)],
+                       FAB = FAB_ps[lower.tri(FAB_ps, diag = FALSE)], 
+                       Truth = truth[lower.tri(truth, diag = FALSE)])
+
+ggplot(UMPU_FAB, aes(x=UMPU, y=FAB, color=Truth)) + 
+        geom_point(alpha=0.3, size=4, aes(shape=Truth)) +
+        labs(title="UMPU_p vs FAB_p", x="UMPU p-value", y = "FAB p-value") +
+        theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+
+c1 <- rgb(100,100,255, max = 255, alpha = 100, names = "lt.blue")
+c2 <- rgb(255,100,100, max = 255, alpha = 100, names = "lt.pink")
+
+UMPU_true_null <- UMPU_ps[null_idx_cbind]
+FAB_true_null <- FAB_ps[null_idx_cbind]
+
+UMPU_alter <- UMPU_ps[alter_idx_cbind]
+FAB_alter <- FAB_ps[alter_idx_cbind]
+
+hist(UMPU_true_null, col=c1)
+hist(FAB_true_null, col=c2)
+
+power_UMPU <- hist(UMPU_alter, plot=FALSE)
+power_FAB <- hist(FAB_alter, plot=FALSE)
+
+plot(power_FAB, col=c2)
+plot(power_UMPU, col=c1, add=TRUE)
+```
+
+```{r}
+flat_UMPU_ps <- UMPU_alter[lower.tri(UMPU_ps, diag = FALSE)]
+flat_FAB_ps <- FAB_alter[lower.tri(FAB_ps, diag = FALSE)]
+
+sorted_flat_UMPU <- sort(flat_UMPU_ps)
+sorted_flat_FAB <- sort(flat_FAB_ps)
+
+sorted_ps <- data.frame(cbind(sorted_flat_UMPU, sorted_flat_FAB))
+sorted_ps$rank <- 1:dim(sorted_ps)[1]
+
+max_idx <- max(sum(sorted_flat_UMPU<0.05), sum(sum(sorted_flat_FAB<0.05)))
+
+df <- sorted_ps %>%
+  gather(key = "variable", value = "value", -rank)
+
+ggplot(df, aes(x=rank, y=value)) + 
+        geom_line(size=2, aes(color = variable, linetype = variable)) + 
+        labs(title="Ranked (unmatched) P-value", x="rank", y = "p-value") +
+        xlim(0, max_idx) + 
+        ylim(0, 0.05)
+```
+
+
+```{r}
+h1 <- hist(F_r[null_idx_cbind], breaks=50, plot=FALSE)
+h2 <- hist(F_r[alter_idx_cbind], breaks=50, plot=FALSE)
+
+plot(h1, col=c1)
+plot(h2, col=c2)
+
+
+```
+
+```{r}
+group_idx <- group_idx[order(group_idx$col_idx, group_idx$row_idx), ]
+group_idx$FAB_ps <- flat_FAB_ps
+group_idx$UMPU_ps <- flat_UMPU_ps
+
+alpha = c(0.2)
+FAB_Discoveries = pfilter(group_idx$FAB_ps, alpha, matrix(group_idx$group_idx))
+UMPU_Discoveries = pfilter(group_idx$UMPU_ps, alpha, matrix(c(1:ttl)))
+
+sum(FAB_Discoveries)
+sum(UMPU_Discoveries)
+```
+
+
+
+

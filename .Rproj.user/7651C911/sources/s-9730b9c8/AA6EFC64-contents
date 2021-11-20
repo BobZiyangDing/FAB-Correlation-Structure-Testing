@@ -1,0 +1,588 @@
+---
+title: "real_data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(FedData)
+pkg_test("adaptMT")
+pkg_test("sgof")
+pkg_test("HDtweedie")
+pkg_test("ggpubr")
+pkg_test("latex2exp")
+
+source("Utils.R")
+source("software.R")
+source("func_sim_boot.R")
+set.seed(12345) #100
+options(warn=-1)
+wes_pal <- wesanderson::wes_palette("Zissou1", 5)
+
+```
+
+#############################################################
+#############################################################
+Case 1: 
+  RNAi Test Data
+  CRISPR Ref Data
+#############################################################
+#############################################################
+
+
+
+```{r load-raw-data}
+HIST_raw <- read.csv("data/depmap_crispr_data.csv")
+NEW_raw <- read.csv("data/depmap_rnai_data.csv")
+Truth_raw <- read.csv("data/coexpressed_genes.csv")
+```
+
+```{r filter-data}
+# Cancel cell line column
+HIST_Filtering <- HIST_raw[, -1]
+NEW_Filtering  <- NEW_raw[, -1]
+
+# Cancel NA rows
+HIST_Filtering <- na.omit(HIST_Filtering)
+NEW_Filtering  <- na.omit(NEW_Filtering)
+
+# Cancel zero var cols
+HIST_Filtering <- HIST_Filtering[, as.numeric(which(apply(HIST_Filtering, 2, var) >= 0 ))]
+NEW_Filtering  <- NEW_Filtering[, as.numeric(which(apply(NEW_Filtering, 2, var) >= 0 ))]
+
+# Trim Down by HIST and NEW Only
+useful_col <- colnames(HIST_raw)
+common_col <- intersect(names(HIST_Filtering), names(NEW_Filtering))
+self_selected_col <- intersect(common_col, useful_col)
+
+HIST_Filtering <- HIST_Filtering[, self_selected_col]
+NEW_Filtering  <- NEW_Filtering[, self_selected_col]
+
+Truth_filter_Gene_1 <- Truth_raw[Truth_raw$Gene1 %in% self_selected_col, ]
+TRUTH <- Truth_filter_Gene_1[Truth_filter_Gene_1$Gene2 %in% self_selected_col, ]
+
+selected_col <- unique( c(TRUTH$Gene1, TRUTH$Gene2) )
+HIST <- HIST_Filtering[, selected_col]
+NEW  <- NEW_Filtering[, selected_col]
+TRUTH <- TRUTH[ TRUTH$Gene1 != TRUTH$Gene2,  ]
+
+
+print(paste("The HIST_raw  has dimension :", dim(HIST_raw)[1], "*", dim(HIST_raw)[2] ) )
+print(paste("The NEW_raw   has dimension :", dim(NEW_raw)[1], "*", dim(NEW_raw)[2] ) )
+print(paste("The Truth_raw has dimension :", dim(Truth_raw)[1], "*", dim(Truth_raw)[2] ) )
+print(paste("The HIST      has dimension :", dim(HIST)[1], "*", dim(HIST)[2] ) )
+print(paste("The NEW       has dimension :", dim(NEW)[1], "*", dim(NEW)[2] ) )
+print(paste("The TRUTH     has dimension :", dim(TRUTH)[1], "*", dim(TRUTH)[2] ) )
+
+
+```
+
+```{r generate-cor-stats}
+# UMPU F_r
+F_r <- atanh(cor(NEW, use = "pairwise.complete.obs"))
+# external reference group F_r for Z score
+F_r_ref <- atanh(cor(HIST, use = "pairwise.complete.obs"))
+
+# Check corr struct similarity
+
+d <- data.frame(cbind(c(F_r), c(F_r_ref)))
+colnames(d) <- c("Testing_Dataset", "Reference_Dataset")
+d <- d[!is.infinite(d$Testing_Dataset),]
+d <- na.omit(d)
+
+data_relation_case_1 <- ggplot(d, aes(x=Testing_Dataset, y=Reference_Dataset)) +
+  geom_point(size=0.5, alpha=0.5)+
+  geom_smooth(method=lm) +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5), legend.position="right") +
+  labs( x="Testing Data", y = "Reference Data")
+
+data_relation_case_1
+
+model <- lm( Reference_Dataset ~ Testing_Dataset, d)
+summary(model)
+```
+
+
+```{r get-ps}
+boot_results = FAB_general_boot(NEW, HIST, num_in_group = 120, shrinkage=0 , need_UMPU = TRUE, powers = c(1) )
+
+boot_UMPU_ps <- boot_results$UMPU_ps
+boot_FAB_ps <- boot_results$FAB_ps
+boot_UMPU_rej <- ifelse(boot_UMPU_ps<0.05, "REJ", "NULL")
+boot_FAB_rej <- ifelse(boot_FAB_ps<0.05, "REJ", "NULL")
+
+colnames(boot_FAB_rej) <- colnames(F_r)
+rownames(boot_FAB_rej) <- rownames(F_r)
+colnames(boot_UMPU_rej) <- colnames(F_r)
+rownames(boot_UMPU_rej) <- rownames(F_r)
+colnames(boot_FAB_ps) <- colnames(F_r)
+rownames(boot_FAB_ps) <- rownames(F_r)
+colnames(boot_UMPU_ps) <- colnames(F_r)
+rownames(boot_UMPU_ps) <- rownames(F_r)
+
+
+truth_rej_idx <- cbind(TRUTH$Gene1, TRUTH$Gene2)
+print(paste("FAB  Rejected : ", sum(boot_FAB_rej[truth_rej_idx] == "REJ") , " out of ", dim(TRUTH)[1] ) )
+print(paste("UMPU Rejected : ", sum(boot_UMPU_rej[truth_rej_idx] == "REJ"), " out of ", dim(TRUTH)[1] ) )
+
+alphas <- seq(0.01, 0.20, 0.01)
+FDR_detail <- getFDRCompResults(boot_FAB_ps, boot_UMPU_ps, F_r_ref, alphas)
+```
+
+```{r}
+r <- cor(NEW, use = "pairwise.complete.obs")
+rej_record <- data.frame( cbind(truth_rej_idx, 
+                          boot_FAB_rej[truth_rej_idx], 
+                          boot_UMPU_rej[truth_rej_idx]
+                          ) )
+rej_record$r <- as.numeric(r[truth_rej_idx])  
+colnames(rej_record) <- c("gene1", "gene2", "FAB.REJ", "UMPU.REJ", "r")
+
+
+rej_record <- rej_record[ order(as.numeric(rej_record$r)), ]
+rej_record$rank <- order(rej_record$r)
+rej_record$pair <- paste(rej_record$gene1, "-", rej_record$gene2 )
+
+rej_record_pos <- rej_record[ rej_record$r > 0, ] 
+rej_record_neg <- rej_record[ rej_record$r <= 0, ]
+
+
+rej_record_pos$FAB_pair <- ifelse(rej_record_pos$FAB.REJ == "REJ", rej_record_pos$pair, NA )
+rej_record_neg$FAB_pair <- ifelse(rej_record_neg$FAB.REJ == "REJ", rej_record_neg$pair, NA )
+
+rej_record_pos$UMPU_pair <- ifelse(rej_record_pos$UMPU.REJ == "REJ", rej_record_pos$pair, NA )
+rej_record_neg$UMPU_pair <- ifelse(rej_record_neg$UMPU.REJ == "REJ", rej_record_neg$pair, NA )
+
+trunc_rej_record_pos_FAB <- rej_record_pos[!is.na(rej_record_pos$FAB_pair),   ]
+trunc_rej_record_neg_FAB <- rej_record_neg[!is.na(rej_record_neg$FAB_pair),   ]
+trunc_rej_record_pos_UMPU <- rej_record_pos[!is.na(rej_record_pos$UMPU_pair), ]
+trunc_rej_record_neg_UMPU <- rej_record_neg[!is.na(rej_record_neg$UMPU_pair), ]
+
+FAB_Rej_set_case_1 <- ggplot2::ggplot() +
+  geom_bar(data = rej_record, aes(x = rank, y = r, fill = FAB.REJ ) , stat = "identity", colour = "white") +
+  geom_text(data = trunc_rej_record_pos_FAB, 
+            x = seq(20, nrow(rej_record), length.out = nrow(trunc_rej_record_pos_FAB)),  
+            y = -0.5, 
+            aes(label = FAB_pair),
+            size = 2.5, 
+            hjust = 1.1, 
+            fontface = "bold", angle=45) +
+  geom_text(data = trunc_rej_record_neg_FAB, 
+            x = seq(0, nrow(rej_record)-50, length.out = nrow(trunc_rej_record_neg_FAB)), 
+            y = 0.5, 
+            aes(label = FAB_pair), 
+            size = 2.5, 
+            hjust = -0.1, 
+            fontface = "bold", 
+            angle=45) +
+  geom_segment(data = trunc_rej_record_pos_FAB, 
+               aes(x = rank, y = 0), 
+               xend = seq(20, nrow(rej_record), length.out = nrow(trunc_rej_record_pos_FAB)), 
+               yend = -0.5, 
+               colour = wes_pal[5], 
+               alpha = 0.5) +
+  geom_segment(data = trunc_rej_record_neg_FAB, 
+               aes(x = rank, y = 0), 
+               xend = seq(0, nrow(rej_record)-50, length.out = nrow(trunc_rej_record_neg_FAB)), 
+               yend = 0.5,
+               colour = wes_pal[5], 
+               alpha = 0.5) +
+  theme_light() +
+  ylim(-1, 1) +
+  scale_fill_manual(values = c("#969696", wes_pal[4])) +
+  guides(fill = F) +
+  labs(x = "Gene Pair Correlation Rank", y = TeX("$\\hat{\\rho}$"))
+
+UMPU_Rej_set_case_1 <- ggplot2::ggplot() +
+  geom_bar(data = rej_record, aes(x = rank, y = r, fill = UMPU.REJ ) , stat = "identity", colour = "white") +
+  geom_text(data = trunc_rej_record_pos_UMPU, 
+            x = seq(20, nrow(rej_record), length.out = nrow(trunc_rej_record_pos_UMPU)),  
+            y = -0.5, 
+            aes(label = UMPU_pair),
+            size = 2.5, 
+            hjust = 1.1, 
+            fontface = "bold", angle=45) +
+  geom_text(data = trunc_rej_record_neg_UMPU, 
+            x = seq(0, nrow(rej_record)-50, length.out = nrow(trunc_rej_record_neg_UMPU)), 
+            y = 0.5, 
+            aes(label = UMPU_pair), 
+            size = 2.5, 
+            hjust = -0.1, 
+            fontface = "bold", 
+            angle=45) +
+  geom_segment(data = trunc_rej_record_pos_UMPU, 
+               aes(x = rank, y = 0), 
+               xend = seq(20, nrow(rej_record), length.out = nrow(trunc_rej_record_pos_UMPU)), 
+               yend = -0.5, 
+               colour = wes_pal[1], 
+               alpha = 0.5) +
+  geom_segment(data = trunc_rej_record_neg_UMPU, 
+               aes(x = rank, y = 0), 
+               xend = seq(0, nrow(rej_record)-50, length.out = nrow(trunc_rej_record_neg_UMPU)), 
+               yend = 0.5,
+               colour = wes_pal[1], 
+               alpha = 0.5) +
+  theme_light() +
+  ylim(-1, 1) +
+  scale_fill_manual(values = c("#969696", wes_pal[1])) +
+  guides(fill = F) +
+  labs(x = "Gene Pair Correlation Rank",  y = TeX("$\\hat{\\rho}$"))
+
+
+```
+
+
+
+```{r}
+
+RejPlots_boot_case_1 <- makeRejPlot(boot_results, have_Truth = FALSE)
+plot(RejPlots_boot_case_1$UMPU_rej)
+plot(RejPlots_boot_case_1$FAB_rej)
+plot(RejPlots_boot_case_1$Diff)
+
+UMPUvsFABPlots_boot_case_1 <- makeUMPUvsFABPlot(boot_results, have_Truth = FALSE)
+plot(UMPUvsFABPlots_boot_case_1)
+
+PDistPlots_boot_case_1 <- makePDistPlot(boot_results, have_Truth = FALSE)
+plot(PDistPlots_boot_case_1$Rank)
+
+FDR_compare_case_1 <- ggplot2::ggplot(FDR_detail) +
+    geom_line(aes(x = Discovery, y = FDR, group = Test, colour = Test)) +
+    geom_point(size=2, aes(x = Discovery, y = FDR, shape=Test, colour = Test)) +
+    geom_hline(yintercept = 0.1, size = 0.5, colour = "#a50f15", alpha = 0.5) +  
+    theme_light() +
+    scale_colour_manual(values = c(wes_pal[1], wes_pal[4], "grey20"), name = "Test") +
+    labs(x = "Rank", y = "FDR") +
+    scale_linetype_manual(values = c("dashed", "solid", "dot")) +
+    scale_shape_manual(values=c(11,3, 7)) +
+    theme(legend.position = c(0.2, 0.8))
+plot(FDR_compare_case_1)
+
+plot(FAB_Rej_set_case_1)
+plot(UMPU_Rej_set_case_1)
+```
+
+```{r}
+ObsFDR <- getObsFDRManyTimes(n=dim(NEW)[1], ref_n=dim(HIST)[1], p=dim(NEW)[2], num_in_group=120, alphas=alphas, I = 50)
+
+FDR_obs_thr_case_1 <- ggplot2::ggplot(ObsFDR) +
+    geom_line(aes(x = Theoretical_FDR, y = Observed_FDR, group = Test, colour = Test)) +
+    geom_point(size=2, aes(x = Theoretical_FDR, y = Observed_FDR, shape=Test, colour = Test)) +  
+    geom_abline(intercept = 0, slope = 1) +  
+    theme_light() +
+    scale_colour_manual(values = c(wes_pal[1], wes_pal[4], "grey20"), name = "Test") +
+    labs(x = "Theoretical FDR", y = "Observed FDR") +
+    xlim(0, 0.2) +
+    ylim(0, 0.2) +
+    scale_linetype_manual(values = c("dashed", "solid")) +
+    scale_shape_manual(values=c(11,3)) +
+    theme(legend.position = c(0.2, 0.8))
+
+plot(FDR_obs_thr_case_1)
+```
+
+```{r}
+case_1_plot_power_res <-ggarrange(data_relation_case_1, FAB_Rej_set_case_1,  # First col
+                                  PDistPlots_boot_case_1$Rank, UMPU_Rej_set_case_1, 
+                                  ncol = 2,
+                                  nrow = 2,
+                                  widths = c(2, 5),
+                                  labels = c("A", "B", "C", "D")
+                                  ) 
+case_1_plot_power_res
+case_1_plot_FDR <- ggarrange(FDR_compare_case_1, FDR_obs_thr_case_1, nrow=1, ncol=2, widths = c(1,1), labels = c("A", "B"))
+case_1_plot_FDR
+
+# ggsave(plot = case_1_plot_power_res, width = 12, height = 8, dpi = 300, filename = "image/real_data_power_case_1_RNA-CRISPR.pdf")
+# ggsave(plot = case_1_plot_FDR, width = 10, height = 5, dpi = 300, filename = "image/real_data_FDR_case_1_RNA-CRISPR.pdf")
+
+```
+
+
+#############################################################
+#############################################################
+Case 2: 
+  lung Test Data
+  breast Ref Data
+#############################################################
+#############################################################
+
+
+```{r load-raw-data}
+HIST_raw <- read.csv("data/depmap_breast_gene_expression_data.csv")
+NEW_raw <- read.csv("data/depmap_lung_gene_expression_data.csv")
+Truth_raw <- read.csv("data/coexpressed_genes.csv")
+```
+
+```{r filter-data}
+# Cancel cell line column
+HIST_Filtering <- HIST_raw[, -1]
+NEW_Filtering  <- NEW_raw[, -1]
+
+# Cancel NA rows
+HIST_Filtering <- na.omit(HIST_Filtering)
+NEW_Filtering  <- na.omit(NEW_Filtering)
+
+# Cancel zero var cols
+HIST_Filtering <- HIST_Filtering[, as.numeric(which(apply(HIST_Filtering, 2, var) >= 0 ))]
+NEW_Filtering  <- NEW_Filtering[, as.numeric(which(apply(NEW_Filtering, 2, var) >= 0 ))]
+
+# Trim Down by HIST and NEW Only
+useful_col <- colnames(HIST_raw)
+common_col <- intersect(names(HIST_Filtering), names(NEW_Filtering))
+self_selected_col <- intersect(common_col, useful_col)
+
+HIST_Filtering <- HIST_Filtering[, self_selected_col]
+NEW_Filtering  <- NEW_Filtering[, self_selected_col]
+
+Truth_filter_Gene_1 <- Truth_raw[Truth_raw$Gene1 %in% self_selected_col, ]
+TRUTH <- Truth_filter_Gene_1[Truth_filter_Gene_1$Gene2 %in% self_selected_col, ]
+
+selected_col <- unique( c(TRUTH$Gene1, TRUTH$Gene2) )
+HIST <- HIST_Filtering[, selected_col]
+NEW  <- NEW_Filtering[, selected_col]
+TRUTH <- TRUTH[ TRUTH$Gene1 != TRUTH$Gene2,  ]
+
+
+print(paste("The HIST_raw  has dimension :", dim(HIST_raw)[1], "*", dim(HIST_raw)[2] ) )
+print(paste("The NEW_raw   has dimension :", dim(NEW_raw)[1], "*", dim(NEW_raw)[2] ) )
+print(paste("The Truth_raw has dimension :", dim(Truth_raw)[1], "*", dim(Truth_raw)[2] ) )
+print(paste("The HIST      has dimension :", dim(HIST)[1], "*", dim(HIST)[2] ) )
+print(paste("The NEW       has dimension :", dim(NEW)[1], "*", dim(NEW)[2] ) )
+print(paste("The TRUTH     has dimension :", dim(TRUTH)[1], "*", dim(TRUTH)[2] ) )
+
+
+```
+
+```{r generate-cor-stats}
+# UMPU F_r
+F_r <- atanh(cor(NEW, use = "pairwise.complete.obs"))
+# external reference group F_r for Z score
+F_r_ref <- atanh(cor(HIST, use = "pairwise.complete.obs"))
+
+# Check corr struct similarity
+
+d <- data.frame(cbind(c(F_r), c(F_r_ref)))
+colnames(d) <- c("Testing_Dataset", "Reference_Dataset")
+d <- d[!is.infinite(d$Testing_Dataset),]
+d <- na.omit(d)
+
+data_relation_case_2 <- ggplot(d, aes(x=Testing_Dataset, y=Reference_Dataset)) +
+  geom_point(size=0.5, alpha=0.5)+
+  theme_light() +
+  geom_smooth(method=lm) +
+  theme(plot.title = element_text(hjust = 0.5), legend.position="right") +
+  labs(x="Testing Data", y = "Reference Data")
+
+data_relation_case_2
+
+model <- lm( Reference_Dataset ~ Testing_Dataset, d)
+summary(model)
+```
+
+
+```{r get-ps}
+boot_results = FAB_general_boot(NEW, HIST, num_in_group = 120, shrinkage=0.001 , need_UMPU = TRUE, powers = c(0, 1) )
+
+boot_UMPU_ps <- boot_results$UMPU_ps
+boot_FAB_ps <- boot_results$FAB_ps
+boot_UMPU_rej <- ifelse(boot_UMPU_ps<0.05, "REJ", "NULL")
+boot_FAB_rej <- ifelse(boot_FAB_ps<0.05, "REJ", "NULL")
+
+colnames(boot_FAB_rej) <- colnames(F_r)
+rownames(boot_FAB_rej) <- rownames(F_r)
+colnames(boot_UMPU_rej) <- colnames(F_r)
+rownames(boot_UMPU_rej) <- rownames(F_r)
+colnames(boot_FAB_ps) <- colnames(F_r)
+rownames(boot_FAB_ps) <- rownames(F_r)
+colnames(boot_UMPU_ps) <- colnames(F_r)
+rownames(boot_UMPU_ps) <- rownames(F_r)
+
+truth_rej_idx <- cbind(TRUTH$Gene1, TRUTH$Gene2)
+print(paste("FAB  Rejected : ", sum(boot_FAB_rej[truth_rej_idx] == "REJ") , " out of ", dim(TRUTH)[1] ) )
+print(paste("UMPU Rejected : ", sum(boot_UMPU_rej[truth_rej_idx] == "REJ"), " out of ", dim(TRUTH)[1] ) )
+
+alphas <- seq(0.01, 0.20, 0.01)
+FDR_detail <- getFDRCompResults(boot_FAB_ps, boot_UMPU_ps, F_r_ref, alphas)
+```
+
+
+```{r}
+r <- cor(NEW, use = "pairwise.complete.obs")
+rej_record <- data.frame( cbind(truth_rej_idx, 
+                          boot_FAB_rej[truth_rej_idx], 
+                          boot_UMPU_rej[truth_rej_idx]
+                          ) )
+rej_record$r <- as.numeric(r[truth_rej_idx])  
+colnames(rej_record) <- c("gene1", "gene2", "FAB.REJ", "UMPU.REJ", "r")
+
+
+rej_record <- rej_record[ order(as.numeric(rej_record$r)), ]
+rej_record$rank <- order(rej_record$r)
+rej_record$pair <- paste(rej_record$gene1, "-", rej_record$gene2 )
+
+rej_record_pos <- rej_record[ rej_record$r > 0, ] 
+rej_record_neg <- rej_record[ rej_record$r <= 0, ]
+
+
+rej_record_pos$FAB_pair <- ifelse(rej_record_pos$FAB.REJ == "REJ", rej_record_pos$pair, NA )
+rej_record_neg$FAB_pair <- ifelse(rej_record_neg$FAB.REJ == "REJ", rej_record_neg$pair, NA )
+
+rej_record_pos$UMPU_pair <- ifelse(rej_record_pos$UMPU.REJ == "REJ", rej_record_pos$pair, NA )
+rej_record_neg$UMPU_pair <- ifelse(rej_record_neg$UMPU.REJ == "REJ", rej_record_neg$pair, NA )
+
+trunc_rej_record_pos_FAB <- rej_record_pos[!is.na(rej_record_pos$FAB_pair),   ]
+trunc_rej_record_neg_FAB <- rej_record_neg[!is.na(rej_record_neg$FAB_pair),   ]
+trunc_rej_record_pos_UMPU <- rej_record_pos[!is.na(rej_record_pos$UMPU_pair), ]
+trunc_rej_record_neg_UMPU <- rej_record_neg[!is.na(rej_record_neg$UMPU_pair), ]
+
+FAB_Rej_set_case_2 <- ggplot2::ggplot() +
+  geom_bar(data = rej_record, aes(x = rank, y = r, fill = FAB.REJ ) , stat = "identity", colour = "white") +
+  geom_text(data = trunc_rej_record_pos_FAB, 
+            x = seq(10, nrow(rej_record), length.out = nrow(trunc_rej_record_pos_FAB)),  
+            y = -0.3, 
+            aes(label = FAB_pair),
+            size = 2.5, 
+            hjust = 1.1, 
+            fontface = "bold", angle=90) +
+  geom_text(data = trunc_rej_record_neg_FAB, 
+            x = seq(0, nrow(rej_record)-50, length.out = nrow(trunc_rej_record_neg_FAB)), 
+            y = 0.5, 
+            aes(label = FAB_pair), 
+            size = 2.5, 
+            hjust = -0.1, 
+            fontface = "bold", 
+            angle=45) +
+  geom_segment(data = trunc_rej_record_pos_FAB, 
+               aes(x = rank, y = 0), 
+               xend = seq(10, nrow(rej_record), length.out = nrow(trunc_rej_record_pos_FAB)), 
+               yend = -0.3, 
+               colour = wes_pal[5], 
+               alpha = 0.5) +
+  geom_segment(data = trunc_rej_record_neg_FAB, 
+               aes(x = rank, y = 0), 
+               xend = seq(0, nrow(rej_record)-50, length.out = nrow(trunc_rej_record_neg_FAB)), 
+               yend = 0.5,
+               colour = wes_pal[5], 
+               alpha = 0.5) +
+  theme_light() +
+  ylim(-1, 1) +
+  scale_fill_manual(values = c("#969696", wes_pal[4])) +
+  guides(fill = F) +
+  labs(x = "Gene Pair Correlation Rank", y = TeX("$\\hat{\\rho}$"))
+
+UMPU_Rej_set_case_2 <- ggplot2::ggplot() +
+  geom_bar(data = rej_record, aes(x = rank, y = r, fill = UMPU.REJ ) , stat = "identity", colour = "white") +
+  geom_text(data = trunc_rej_record_pos_UMPU, 
+            x = seq(10, nrow(rej_record), length.out = nrow(trunc_rej_record_pos_UMPU)),  
+            y = -0.3, 
+            aes(label = UMPU_pair),
+            size = 2.5, 
+            hjust = 1.1, 
+            fontface = "bold", angle=90) +
+  geom_text(data = trunc_rej_record_neg_UMPU, 
+            x = seq(0, nrow(rej_record)-50, length.out = nrow(trunc_rej_record_neg_UMPU)), 
+            y = 0.5, 
+            aes(label = UMPU_pair), 
+            size = 2.5, 
+            hjust = -0.1, 
+            fontface = "bold", 
+            angle=45) +
+  geom_segment(data = trunc_rej_record_pos_UMPU, 
+               aes(x = rank, y = 0), 
+               xend = seq(10, nrow(rej_record), length.out = nrow(trunc_rej_record_pos_UMPU)), 
+               yend = -0.3, 
+               colour = wes_pal[1], 
+               alpha = 0.5) +
+  geom_segment(data = trunc_rej_record_neg_UMPU, 
+               aes(x = rank, y = 0), 
+               xend = seq(0, nrow(rej_record)-50, length.out = nrow(trunc_rej_record_neg_UMPU)), 
+               yend = 0.5,
+               colour = wes_pal[1], 
+               alpha = 0.5) +
+  theme_light() +
+  ylim(-1, 1) +
+  scale_fill_manual(values = c("#969696", wes_pal[1])) +
+  guides(fill = F) +
+  labs(x = "Gene Pair Correlation Rank", y = TeX("$\\hat{\\rho}$"))
+
+
+```
+
+```{r}
+RejPlots_boot_case_2 <- makeRejPlot(boot_results, have_Truth = FALSE)
+plot(RejPlots_boot_case_2$UMPU_rej)
+plot(RejPlots_boot_case_2$FAB_rej)
+plot(RejPlots_boot_case_2$Diff)
+
+UMPUvsFABPlots_boot_case_2 <- makeUMPUvsFABPlot(boot_results, have_Truth = FALSE)
+plot(UMPUvsFABPlots_boot_case_2)
+
+PDistPlots_boot_case_2 <- makePDistPlot(boot_results, have_Truth = FALSE)
+plot(PDistPlots_boot_case_2$Rank)
+
+
+FDR_compare_case_2 <- ggplot2::ggplot(FDR_detail) +
+    geom_line(aes(x = Discovery, y = FDR, group = Test, colour = Test)) +
+    geom_point(size=2, aes(x = Discovery, y = FDR, shape=Test, colour = Test)) +
+    geom_hline(yintercept = 0.1, size = 0.5, colour = "#a50f15", alpha = 0.5) +
+    theme_light() +
+    scale_colour_manual(values = c(wes_pal[1], wes_pal[4], "grey20"), name = "Test") +
+    labs(x = "Rank", y = "FDR") +
+    scale_linetype_manual(values = c("dashed", "solid", "dot")) +
+    scale_shape_manual(values=c(11,3, 7)) +
+    theme(legend.position = c(0.2, 0.8))
+plot(FDR_compare_case_2)
+```
+
+
+```{r}
+ObsFDR <- getObsFDRManyTimes(n=dim(NEW)[1], ref_n=dim(HIST)[1], p=dim(NEW)[2], num_in_group=120, alphas=alphas, I = 50)
+
+FDR_obs_thr_case_2 <- ggplot2::ggplot(ObsFDR) +
+    geom_line(aes(x = Theoretical_FDR, y = Observed_FDR, group = Test, colour = Test)) +
+    geom_point(size=2, aes(x = Theoretical_FDR, y = Observed_FDR, shape=Test, colour = Test)) +  
+    geom_abline(intercept = 0, slope = 1) +  
+    theme_light() +
+    scale_colour_manual(values = c(wes_pal[1], wes_pal[4], "grey20"), name = "Test") +
+    labs(x = "Theoretical FDR", y = "Observed FDR") +
+    scale_linetype_manual(values = c("dashed", "solid")) +
+    scale_shape_manual(values=c(11,3)) +
+    theme(legend.position = c(0.2, 0.8)) +
+    ylim(0, 0.2) +
+    xlim(0, 0.2)
+    
+plot(FDR_obs_thr_case_2)
+```
+
+```{r}
+case_2_plot_power_res <-ggarrange(data_relation_case_2, FAB_Rej_set_case_2,  # First col
+                                  PDistPlots_boot_case_2$Rank, UMPU_Rej_set_case_2, 
+                                  ncol = 2,
+                                  nrow = 2,
+                                  widths = c(2, 5),
+                                  labels = c("A", "B", "C", "D")
+                                  ) 
+case_2_plot_power_res
+case_2_plot_FDR <- ggarrange(FDR_compare_case_2, FDR_obs_thr_case_2, nrow=1, ncol=2, widths = c(1,1), labels = c("A", "B"))
+case_2_plot_FDR
+
+# ggsave(plot = case_2_plot_power_res, width = 12, height = 8, dpi = 300, filename = "image/real_data_power_case_2_lung-breast.pdf")
+# ggsave(plot = case_2_plot_FDR, width = 10, height = 5, dpi = 300, filename = "image/real_data_FDR_case_2_lung-breast.pdf")
+
+```
+
+<!-- # ```{r} -->
+<!-- #  -->
+<!-- # adapt_df <- data.frame( cbind(c(F_r_ref), c(boot_UMPU_ps)) ) -->
+<!-- # colnames(adapt_df) <- c("F_r_ref", "pvals") -->
+<!-- # adapt_df <- adapt_df[!is.infinite(adapt_df$F_r_ref),] -->
+<!-- # adapt_df <- na.omit(adapt_df) -->
+<!-- # adapt_df$x <- sort(adapt_df$F_r_ref, index.return=TRUE)$ix -->
+<!-- #  -->
+<!-- # res <- adaptMT::adapt_glmnet(x = as.matrix(adapt_df[, c("x", "x") ]), -->
+<!-- #                                pvals = adapt_df$pvals,  -->
+<!-- #                                alphas = 0.10) -->
+<!-- #  -->
+<!-- # ``` -->
+

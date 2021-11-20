@@ -1,0 +1,3 @@
+"0","HIST_raw <- read.csv(""data/depmap_breast_gene_expression_data.csv"")"
+"0","NEW_raw <- read.csv(""data/depmap_lung_gene_expression_data.csv"")"
+"0","Truth_raw <- read.csv(""data/coexpressed_genes.csv"")"

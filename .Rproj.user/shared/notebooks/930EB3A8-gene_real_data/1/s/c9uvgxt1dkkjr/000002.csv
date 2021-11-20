@@ -1,0 +1,8 @@
+"0","n <- dim(NEW)[1]"
+"0","ref_n <- dim(HIST)[1]"
+"0","p <- dim(NEW)[2]"
+"0","ttl <- p*(p-1)/2"
+"0",""
+"0","num_in_group <- 50"
+"0","num_groups <- ttl %/% num_in_group"
+"0","num_null <- ttl %/% 2"

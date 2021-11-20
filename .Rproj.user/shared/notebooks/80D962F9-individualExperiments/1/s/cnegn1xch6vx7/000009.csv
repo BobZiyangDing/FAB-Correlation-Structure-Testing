@@ -1,0 +1,8 @@
+"0","boot_UMPU_FAB_Scatter <- UMPUvsFABPlots_boot"
+"0","boot_UMPU_FAB_Power_Line <- PDistPlots_boot$Rank"
+"0",""
+"0",""
+"0","ggsave(plot = boot_UMPU_FAB_Rej_Plot, width = 10, height = 5, dpi = 300, filename = ""image/boot_UMPU_FAB_Rej_Plot.pdf"")"
+"0","ggsave(plot = boot_UMPU_FAB_Null_Dist, width = 10, height = 3, dpi = 300, filename = ""image/boot_UMPU_FAB_Null_Dist.pdf"")"
+"0","ggsave(plot = boot_UMPU_FAB_Alter_Dist, width = 10, height = 3, dpi = 300, filename = ""image/boot_UMPU_FAB_Alter_Dist.pdf"")"
+"0","ggsave(plot = boot_UMPU_FAB_Scatter, width = 7, height = 5, dpi = 300, filename = ""image/boot_UMPU_FAB_Scatter.pdf"")"

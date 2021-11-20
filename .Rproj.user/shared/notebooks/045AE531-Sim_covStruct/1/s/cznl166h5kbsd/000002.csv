@@ -1,0 +1,2 @@
+"0","F_r <- cor(data_raw)"
+"0","F_r_ref <- cor(data_ref, use = ""pairwise.complete.obs"")"

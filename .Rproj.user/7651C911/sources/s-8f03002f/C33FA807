@@ -1,0 +1,28 @@
+{
+    "id": "C33FA807",
+    "path": "/home/grad/zd26/FABBrainConnectome/FAB_corr/gene_real_data.Rmd",
+    "project_path": "gene_real_data.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1630027914725.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "402,0",
+        "scrollLine": "383",
+        "last_setup_crc32": "13e3093126a8c9e9"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1629514102,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1629514102,
+    "read_only": false,
+    "read_only_alternatives": []
+}

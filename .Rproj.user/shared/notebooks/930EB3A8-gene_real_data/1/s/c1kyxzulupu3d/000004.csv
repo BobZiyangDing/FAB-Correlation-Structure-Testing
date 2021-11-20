@@ -1,0 +1,7 @@
+"0","# UMPU F_r"
+"0","F_r <- atanh(cor(NEW, use = ""pairwise.complete.obs""))"
+"0","# external reference group F_r for Z score"
+"0","F_r_ref <- atanh(cor(HIST, use = ""pairwise.complete.obs""))"
+"0",""
+"0","# Check corr struct similarity"
+"0","plot(c(F_r), c(F_r_ref))"

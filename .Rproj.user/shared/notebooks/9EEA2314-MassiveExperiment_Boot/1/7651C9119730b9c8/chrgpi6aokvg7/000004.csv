@@ -1,0 +1,7 @@
+"0","# save(boot_massive_results, file = ""boot_massive_results.RData"")
+# boot_massive_results$`n-50-q-50`$FAB_power - boot_massive_results$`n-50-q-50`$UMPU_power
+kable(boot_massive_results)
+"
+"2","Error in as.data.frame.default(x) : 
+  cannot coerce class ‘structure(""hash"", package = ""hash"")’ to a data.frame
+"

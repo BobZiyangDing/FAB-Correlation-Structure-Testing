@@ -1,0 +1,291 @@
+library(MASS)
+library(matrixcalc)
+library(clusterGeneration)
+library(pracma)
+# library(R2jags)
+library(tidyverse)
+library(foreach)
+library(doParallel)
+
+
+gen_indpt_data <- function(n, var_X, mu_X, var_y, mu_y, corr_Xy){
+  p <- length(var_X)
+  Sigma_X <- diag(var_X)
+  
+  std_y <- sqrt(var_y)
+  std_X <- sqrt(var_X)
+  
+  cov_Xy_vec <- std_y * std_X * corr_Xy
+  Sigma_Xy <- subMtx_to_fullMtx(Sigma_X, cov_Xy_vec, var_y)
+  
+  mu_Xy <- append(mu_X, mu_y)
+  Xy <- mvrnorm(n, mu_Xy, Sigma_Xy)
+  
+  return(as.matrix(Xy))
+}
+
+
+subMtx_to_fullMtx <- function(subMtx, new_vec, corner){
+  fullMtx <- rbind(subMtx, new_vec)
+  
+  fullMtx <- cbind(fullMtx, append(new_vec, corner))
+  return(fullMtx)
+}
+
+
+gen_nonindpt_data <- function(n, Sigma_Xy, mu_X, mu_y){
+  mu_Xy <- append(mu_X, mu_y)
+  Xy <- mvrnorm(n, mu_Xy, Sigma_Xy)
+  
+  return(as.matrix(Xy))
+}
+
+
+
+# get_nonindpt_mv <- function(Sigma_X, X, y, std_y, n.iter, n.burnin, alpha){
+#   ms <- c()
+#   vs <- c()
+#   
+#   for (j in 1:p){
+#     G_j <- nullspace(t(Sigma_X[j,]))
+#     
+#     decorr_X <- t(G_j) %*% X
+#     decorr_Xy <- rbind(decorr_X, y)
+#     
+#     CorMatrix_decorr_Xy <- cor(t(decorr_Xy))
+#     g_r <- CorMatrix_decorr_Xy[p, -p]
+#     Fg_r <- atanh(g_r) # Test Statistics
+#     
+#     
+#     new_Sigma_X <- t(G_j) %*% Sigma_X %*% G_j
+#     new_var_X <- diag(new_Sigma_X)
+#     new_std_X <- sqrt(new_var_X)
+#     mix_coef <- G_j / new_std_X / std_y
+#     
+#     model_jags <- function(){
+#       for(i in 1:(p-1)){
+#         Fg_r[i] ~ dnorm(Fg_rho[i], n-3) # It uses precision rather than var here
+#       }
+#       
+#       Fg_rho <- arctanh(g_rho)
+#       g_rho <- t(mix_coef) %*% rho
+#       rho <- tanh(F_rho)
+#       F_rho ~ dmnorm( mu , eye) # It uses precision rather than var here
+#       mu ~ ddirch( alpha )
+#     }
+#     
+#     
+#     jags_data <- list(p=p, n=n, Fg_r=Fg_r, alpha=rep(alpha, p), mix_coef=mix_coef, eye=diag(p))
+#     jags_sims_mv <- jags(data = jags_data,
+#                          model.file = model_jags,
+#                          parameters.to.save = c("F_rho"),
+#                          n.iter = n.iter,
+#                          n.burnin = n.burnin,
+#                          progress.bar = "none")
+#     
+#     
+#     
+#     Result <- as.mcmc(jags_sims_mv)
+#     
+#     name <- str_c("F_rho.", j, ".")
+#     
+#     samples <- (data.frame(as.matrix(Result))[name])[,1]
+#     ms <- append(ms, mean(samples))
+#     vs <- append(vs, var(samples))
+#   }
+#   
+#   return(list(ms, vs))
+# }
+
+
+individual_MCMC <- function(j, Sigma_X, X, y, std_y, n.iter, n.burnin, alpha){
+  G_j <- nullspace(t(Sigma_X[j,]))
+  
+  decorr_X <- t(G_j) %*% X
+  decorr_Xy <- rbind(decorr_X, y)
+  
+  CorMatrix_decorr_Xy <- cor(t(decorr_Xy))
+  g_r <- CorMatrix_decorr_Xy[p, -p]
+  Fg_r <- atanh(g_r) # Test Statistics
+  
+  
+  new_Sigma_X <- t(G_j) %*% Sigma_X %*% G_j
+  new_var_X <- diag(new_Sigma_X)
+  new_std_X <- sqrt(new_var_X)
+  mix_coef <- G_j / new_std_X / std_y
+  
+  model_jags <- function(){
+    for(i in 1:(p-1)){
+      Fg_r[i] ~ dnorm(Fg_rho[i], n-3) # It uses precision rather than var here
+    }
+    
+    Fg_rho <- arctanh(g_rho)
+    g_rho <- t(mix_coef) %*% rho
+    rho <- tanh(F_rho)
+    F_rho ~ dmnorm( mu , eye) # It uses precision rather than var here
+    mu ~ ddirch( alpha )
+  }
+  
+  jags_data <- list(p=p, n=n, Fg_r=Fg_r, alpha=rep(alpha, p), mix_coef=mix_coef, eye=diag(p))
+  jags_sims_mv <- jags(data = jags_data,
+                       model.file = model_jags,
+                       parameters.to.save = c("F_rho"),
+                       n.iter = n.iter,
+                       n.burnin = n.burnin,
+                       progress.bar = "none")
+  
+  
+  Result <- as.mcmc(jags_sims_mv)
+  name <- str_c("F_rho.", j, ".")
+  samples <- (data.frame(as.matrix(Result))[name])[,1]
+  
+  return( c(mean(samples),  var(samples)) )
+}
+
+get_nonindpt_mv <- function(Sigma_X, X, y, p, n, std_y, n.iter, n.burnin, alpha){
+
+  cores=detectCores()
+  cl <- makeCluster(cores[1]-1) #not to overload your computer
+  registerDoParallel(cl)
+  
+  finalMatrix <- foreach(j=1:p, .combine=cbind, .packages='raster', .verbose=FALSE) %dopar% {
+    library(MASS)
+    library(matrixcalc)
+    library(clusterGeneration)
+    library(pracma)
+    library(R2jags)
+    library(tidyverse)
+    
+    G_j <- nullspace(t(Sigma_X[j,]))
+    
+    decorr_X <- t(G_j) %*% X
+    decorr_Xy <- rbind(decorr_X, y)
+    
+    CorMatrix_decorr_Xy <- cor(t(decorr_Xy))
+    g_r <- CorMatrix_decorr_Xy[p, -p]
+    Fg_r <- atanh(g_r) # Test Statistics
+    
+    
+    new_Sigma_X <- t(G_j) %*% Sigma_X %*% G_j
+    new_var_X <- diag(new_Sigma_X)
+    new_std_X <- sqrt(new_var_X)
+    mix_coef <- G_j / new_std_X / std_y
+    
+    model_jags <- function(){
+      for(i in 1:(p-1)){
+        Fg_r[i] ~ dnorm(Fg_rho[i], n-3) # It uses precision rather than var here
+      }
+      
+      Fg_rho <- arctanh(g_rho)
+      g_rho <- t(mix_coef) %*% rho
+      rho <- tanh(F_rho)
+      F_rho ~ dmnorm( mu , eye) # It uses precision rather than var here
+      mu ~ ddirch( alpha )
+    }
+    
+    jags_data <- list(p=p, n=n, Fg_r=Fg_r, alpha=rep(alpha, p), mix_coef=mix_coef, eye=diag(p))
+    jags_sims_mv <- jags(data = jags_data,
+                         model.file = model_jags,
+                         parameters.to.save = c("F_rho"),
+                         n.iter = n.iter,
+                         n.burnin = n.burnin,
+                         progress.bar = "none")
+    
+    
+    Result <- as.mcmc(jags_sims_mv)
+    name <- str_c("F_rho.", j, ".")
+    samples <- (data.frame(as.matrix(Result))[name])[,1]
+    c(mean(samples),  var(samples))
+  }
+  #stop cluster
+  stopCluster(cl)
+  
+
+  return(finalMatrix)
+}
+
+
+get_nonindpt_boot <- function(Cor_F_r, F_r, n, p){
+  cores=detectCores()
+  cl <- makeCluster(cores[1]-1) #not to overload your computer
+  registerDoParallel(cl)
+  
+  finalMatrix <- foreach(j=1:p, 
+                         .combine=cbind, 
+                         .packages = "pracma",
+                         .verbose=TRUE) %dopar% {
+    G_j <- nullspace(t(Cor_F_r[j,]))
+    indirect_info <- t(G_j) %*% F_r
+    
+    mu_MLE <- one %*% inv(t(G_j) %*% one) %*% indirect_info
+    psi2_MLE <- (p/(p-1)*var(indirect_info) - 1/(n-3))[1,1]
+    
+    temp <- G_j %*%inv(t(G_j)%*% Cor_F_r %*% G_j) %*% t(G_j)
+    V <- inv( diag(p)/psi2_MLE + temp)
+    m <- V %*% ( (1 / psi2_MLE)* as.matrix(rep(1, p)*mu_MLE) + temp %*% F_r)
+    
+    tilde_m <- V[j,j]
+    tilde_v <- m[j]
+    umpu_p <- 1 - abs(pnorm(F_r[j]*sqrt(n-3), 0, 1) - 
+                      pnorm(-F_r[j]*sqrt(n-3), 0, 1) )
+    fab_p <- 1 - abs(pnorm(F_r[j]*sqrt(n-3) + 2*tilde_m*sqrt(n-3)/tilde_v , 0, 1) - 
+                      pnorm(-F_r[j]*sqrt(n-3), 0, 1) )
+    c(fab_p, umpu_p)
+  }
+}
+
+
+get_nonindpt_gene <- function(Cor_F_r, F_r, n, p, one, verbose=FALSE){
+  cores=detectCores()
+  cl <- makeCluster(cores[1]-1) #not to overload your computer
+  registerDoParallel(cl)
+  
+  finalMatrix <- foreach(j=1:p, 
+                         .combine=cbind, 
+                         .packages = "pracma",
+                         .verbose=verbose) %dopar% {
+                           # G_j <- nullspace(t(Cor_F_r[j,]))
+                           # indirect_info <- t(G_j) %*% F_r
+                           # eta_MLE <- inv(t(one) %*% G_j %*% t(G_j) %*% one) %*% t(one) %*% G_j %*% indirect_info
+                           # mu_MLE <- one %*% eta_MLE
+                           # psi2_MLE <- (p/(p-1)*var(indirect_info) - 1/(n-3))[1,1]
+                           # 
+                           # temp <- G_j %*%inv( t(G_j)%*% Cor_F_r%*%G_j / (n-3) ) %*% t(G_j)
+                           # 
+                           # V <- inv( diag(p)/psi2_MLE + temp)
+                           # m <- V %*% ( (diag(p) / psi2_MLE) %*% mu_MLE + temp %*% F_r)
+                           # 
+                           # tilde_m <- V[j,j]
+                           # tilde_v <- m[j]
+                           # umpu_p <- 1 - abs(pnorm(F_r[j]*sqrt(n-3), 0, 1) - 
+                           #                     pnorm(-F_r[j]*sqrt(n-3), 0, 1) )
+                           # fab_p <- 1 - abs(pnorm(F_r[j]*sqrt(n-3) + 2*tilde_m*sqrt(n-3)/tilde_v , 0, 1) - 
+                           #                    pnorm(-F_r[j]*sqrt(n-3), 0, 1) )
+                           # c(fab_p, umpu_p)
+                           return(c(1,2))
+                         }
+  return(finalMatrix)
+}
+
+
+tensor_to_group_mtx <- function(whole_tensor, group_subset_info){
+  # cores=detectCores()
+  # cl <- makeCluster(cores[1]-1) #not to overload your computer
+  # registerDoParallel(cl)
+  
+  num_obs <- dim(group_subset_info)[1]
+  group_mtx <- NULL
+  for(obs_idx in 1:num_obs){
+    row_idx <- group_subset_info$row_idx[obs_idx]
+    col_idx <- group_subset_info$col_idx[obs_idx]
+    group_mtx <- rbind(group_mtx, whole_tensor[, row_idx, col_idx])
+  }
+  
+  # group_mtx <- foreach(obs_idx=1:num_obs, .combine=rbind) %dopar% {
+  #                        row_idx <- group_subset_info$row_idx[obs_idx]
+  #                        col_idx <- group_subset_info$col_idx[obs_idx]
+  #                        whole_tensor[, row_idx, col_idx]
+  #                      }
+  
+  return(group_mtx)
+}

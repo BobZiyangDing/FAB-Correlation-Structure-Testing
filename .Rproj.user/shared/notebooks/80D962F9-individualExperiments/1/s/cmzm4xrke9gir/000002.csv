@@ -1,0 +1,8 @@
+"0","# write.csv(comp_result_par, file = ""saved_result/idpt_result.csv"")"
+"0","# library(ggplot2)"
+"0","# temp <- read_csv(""saved_result/idpt_result.csv"")"
+"0","# ggplot() + "
+"0","#   geom_line(data = temp, aes(x=alphas,  y=FAB_mses), size=1, color=""blue"") +"
+"0","#   geom_line(data = temp, aes(x=alphas,  y=UMPU_mses), size=1, color=""green"") +"
+"0","#   ggtitle(""Independent FAB vs UMPU imputation precision"") + "
+"0","#   xlim(0, 0.05)"

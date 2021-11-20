@@ -1,0 +1,7 @@
+"0",""
+"0","boot_melted_diff <- melt(boot_UMPU_ps >= boot_FAB_ps)"
+"0","ggplot(data = boot_melted_diff, aes(x=Var1, y=Var2, fill=value)) + "
+"0","    geom_tile() + ggtitle(""UMPU p > FAB p"") +"
+"0","    theme(plot.title = element_text(hjust = 0.5), legend.position=""bottom"") +"
+"0","    xlab(""x"") + ylab(""y"") + "
+"0","    scale_fill_manual(values=c(""black"", ""green""))"

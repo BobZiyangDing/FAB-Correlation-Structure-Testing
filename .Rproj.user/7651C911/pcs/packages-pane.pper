@@ -1,0 +1,7 @@
+{
+    "installOptions": {
+        "installFromRepository": true,
+        "libraryPath": "/home/grad/zd26/R/4.0",
+        "installDependencies": true
+    }
+}

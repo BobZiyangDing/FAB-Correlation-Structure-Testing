@@ -1,0 +1,9 @@
+"0","UMPU_null <- PDistPlots[[1]]"
+"0","FAB_null <- PDistPlots[[2]]"
+"0","UMPU_power <- PDistPlots[[3]]"
+"0","FAB_power <- PDistPlots[[4]]"
+"0","Rank <- PDistPlots[[5]]"
+"0","plot(Rank)"
+"2","Warning:"
+"2"," Removed 15826 row(s) containing missing values (geom_path).
+"

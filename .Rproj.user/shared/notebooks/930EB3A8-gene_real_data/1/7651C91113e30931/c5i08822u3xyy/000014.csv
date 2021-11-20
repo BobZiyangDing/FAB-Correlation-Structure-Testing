@@ -1,0 +1,87 @@
+"0","comp_result_boot <- get_comp_results_par(alphas, test_data, train_data_info, boot_pval_results)
+comp_result_boot <- get_comp_results_par(alphas, test_data, train_data_info, boot_pval_results)
+ggplot() + 
+  geom_line(data = comp_result_boot, aes(x=alphas,  y=FAB_mses), size=1, color=""blue"") +
+  geom_line(data = comp_result_boot, aes(x=alphas,  y=UMPU_mses), size=1, color=""green"") +
+  ggtitle(""Combine plot of BV cumulative counts"") 
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 66 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 65 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 64 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 63 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 62 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 61 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 60 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 59 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 58 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 57 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 56 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 55 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 54 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 53 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 52 (<-localhost:11588)
+"
+"2","Warning in for (i in seq_along(x)) { :"
+"2","
+ "
+"2"," closing unused connection 51 (<-localhost:11588)
+"

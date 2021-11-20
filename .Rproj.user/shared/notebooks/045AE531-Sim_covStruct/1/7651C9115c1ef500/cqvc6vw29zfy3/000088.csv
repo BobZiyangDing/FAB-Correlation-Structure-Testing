@@ -1,0 +1,5 @@
+"0",""
+"0",""
+"0","melted_truth <- melt(truth)"
+"0","ggplot(data = melted_truth, aes(x=Var1, y=Var2, fill=value)) + "
+"0","  geom_tile()"

@@ -1,0 +1,25 @@
+{
+    "id": "B910D7EB",
+    "path": "~/FABBrainConnectome/FAB_corr/Sim_covStruct.Rmd",
+    "project_path": "Sim_covStruct.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1620503479383.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "cursorPosition": "83,8",
+        "scrollLine": "67",
+        "last_setup_crc32": "5c1ef500795dc5db"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1620678405,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1620679839147,
+    "read_only": false,
+    "read_only_alternatives": []
+}

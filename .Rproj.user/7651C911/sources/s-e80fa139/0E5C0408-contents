@@ -1,0 +1,337 @@
+---
+title: "real_data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(Rcpp)
+library(fabricatr)
+library(mltools)
+library(onehot)
+library(mgcv)
+library(tidyverse)
+library(foreach)
+library(doParallel)
+library(kableExtra)
+library(boot)
+library(tensorr)
+library(dplyr)
+library(reshape2)
+library(dvmisc)
+library(tidyverse)
+source("Utils.R")
+source("pfilter.R")
+sourceCpp("Cov_struct_func.cpp")
+setwd("~/FABBrainConnectome/FAB_corr")
+set.seed(123)
+options(warn=-1)
+
+```
+
+```{r load-raw-data}
+CRISPR_raw <- read.csv("data/CRISPR_gene_effect.csv")
+EXP_raw <- read.csv("data/CCLE_expression.csv")
+```
+
+```{r get-useful-cols}
+col_info <- read.csv("data/cancer_gene_census.csv")
+useful_col <- col_info$Gene.Symbol
+```
+
+
+
+```{r filter-data}
+# Cancel cell line column
+CRISPR <- CRISPR_raw[, -1]
+EXP <- EXP_raw[, -1]
+
+names(CRISPR) <- gsub("[.].*", "", names(CRISPR))
+names(EXP) <- gsub("[.].*", "", names(EXP))
+
+# Cancel zero var cols 
+CRISPR <- CRISPR[, as.numeric(which(apply(CRISPR, 2, var) >= 0 ))]
+EXP <- EXP[, as.numeric(which(apply(EXP, 2, var) >= 0 ))]
+
+# Cancel non-common cols 
+common_col <- intersect(names(CRISPR), names(EXP))
+
+# Sselect useful and common cols
+selected_col <- intersect(common_col, useful_col)
+
+CRISPR <- CRISPR[, selected_col]
+EXP <- EXP[, selected_col]
+
+# Cancel NA rows
+CRISPR <- na.omit(CRISPR)
+EXP <- na.omit(EXP)
+```
+
+```{r get-statistics}
+n <- dim(CRISPR)[1]
+ref_n <- dim(EXP)[1]
+p <- dim(CRISPR)[2]
+ttl <- p*(p-1)/2
+
+num_in_group <- 100
+num_groups <- ttl %/% num_in_group
+num_null <- ttl %/% 2
+```
+
+
+```{r generate-cor-stats}
+# UMPU F_r
+F_r <- atanh(cor(EXP, use = "pairwise.complete.obs"))
+# external reference group F_r for Z score
+F_r_ref <- atanh(cor(CRISPR, use = "pairwise.complete.obs"))
+
+# Check corr struct similarity
+plot(c(F_r), c(F_r_ref))
+```
+
+```{r factor-loading-matrix-get-one}
+group_idx <- NULL
+for(i in 2:p){
+  for(j in 1:(i-1)){
+    group_idx <- rbind(group_idx, c(i, j, F_r_ref[i, j]))
+  }
+}
+group_idx <- data.frame(group_idx)
+
+colnames(group_idx) <- c("row_idx", "col_idx", "F_r_value")
+group_idx <- group_idx[order(group_idx$F_r_value), ]
+group_idx$group_idx <- as.numeric(split_quantile(x = 1:ttl, type = num_groups))
+```
+
+```{r get-group-F_r function}
+get_group_F_r <- function(group_subset, F_r){
+  group_index_list <- group_subset %>% dplyr::select(row_idx, col_idx) %>% as.matrix()
+  group_F_r <- F_r[group_index_list]
+  return(group_F_r)
+}
+```
+
+
+# Independent Stuff
+
+```{r get-ps}
+FAB_ps <- diag(p)
+UMPU_ps <- diag(p)
+
+for(idx in 1:num_groups){
+  group_subset <- subset(group_idx, group_idx==idx)
+  group_direct_F_r <- get_group_F_r(group_subset, F_r)
+  group_indirect_F_r <- get_group_F_r(group_subset, F_r_ref)
+
+  group_p <- dim(group_subset)[1]
+
+  for(j in 1:group_p){
+    group_indirect_info <- group_indirect_F_r[-j]
+    mu_MLE <- mean(group_indirect_info)
+    psi2_MLE <- group_p/(group_p-1)*var(group_indirect_info) - 1/(ref_n-3) + 0.5
+
+    tilde_m <- mu_MLE
+    tilde_v <- psi2_MLE
+    
+    fab_p <- 1 - abs(pnorm(group_direct_F_r[j]*sqrt(n-3) + 2*tilde_m*sqrt(ref_n-3)/tilde_v , 0, 1) - 
+                      pnorm(-group_direct_F_r[j]*sqrt(n-3), 0, 1) )
+    umpu_p <- 1 - abs(pnorm(group_direct_F_r[j]*sqrt(n-3) , 0, 1) - 
+                      pnorm(-group_direct_F_r[j]*sqrt(n-3), 0, 1) )
+
+    row_idx = group_subset$row_idx[j]
+    col_idx = group_subset$col_idx[j]
+    FAB_ps[row_idx, col_idx] = fab_p
+    FAB_ps[col_idx, row_idx] = fab_p
+    UMPU_ps[row_idx, col_idx] = umpu_p
+    UMPU_ps[col_idx, row_idx] = umpu_p
+  }
+  if(idx %% 100 == 0){
+    print(idx)
+  }
+}
+
+```
+
+
+```{r make plot}
+UMPU_rej <- ifelse(UMPU_ps<0.05, "REJ", "NULL")
+FAB_rej <- ifelse(FAB_ps<0.05, "REJ", "NULL")
+# 
+melted_UMPU_rej <- melt(UMPU_rej)
+ggplot(data = melted_UMPU_rej, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("UMPU Rejection") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+
+melted_FAB_rej <- melt(FAB_rej)
+ggplot(data = melted_FAB_rej, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("FAB Rejection") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+
+melted_diff <- melt(UMPU_ps >= FAB_ps)
+ggplot(data = melted_diff, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggtitle("p_UMPU >= p_FAB") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    xlab("x") + ylab("y") + 
+    scale_fill_manual(values=c("green", "blue"))
+
+
+UMPU_FAB <- data.frame(UMPU = UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)],
+                       FAB = FAB_ps[lower.tri(FAB_ps, diag = FALSE)])
+
+ggplot(UMPU_FAB, aes(x=UMPU, y=FAB)) +
+        geom_point(size=1, alpha=0.05) +
+        labs(title="UMPU vs FAB", x="UMPU p-value", y = "FAB p-value")
+```
+
+
+
+
+```{r}
+flat_UMPU_ps <- UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)]
+flat_FAB_ps <- FAB_ps[lower.tri(FAB_ps, diag = FALSE)]
+
+sorted_flat_UMPU <- sort(flat_UMPU_ps)
+sorted_flat_FAB <- sort(flat_FAB_ps)
+
+sorted_ps <- data.frame(cbind(sorted_flat_UMPU, sorted_flat_FAB))
+sorted_ps$rank <- 1:dim(sorted_ps)[1]
+
+
+
+max_idx <- max(sum(sorted_flat_UMPU<0.05), sum(sum(sorted_flat_FAB<0.05)))
+
+df <- sorted_ps %>%
+  gather(key = "variable", value = "value", -rank)
+
+ggplot(df, aes(x=rank, y=value)) + 
+        geom_line(size=2, aes(color = variable, linetype = variable)) + 
+        labs(title="Ranked (unmatched) P-value", x="rank", y = "p-value") +
+        xlim(0, max_idx) + 
+        ylim(0, 0.05)
+```
+
+
+
+# Bootstrapping Stuff
+
+```{r bootstrap-group}
+num_in_group <- 50
+num_groups <- ttl %/% num_in_group
+num_null <- ttl %/% 2
+```
+
+
+```{r get-cor-func}
+get_cor <- function(data, i){
+  sub_data <- data[i, ]
+  return(atanh(cor(sub_data)))
+}
+```
+
+```{r try-bootstrap}
+cores=detectCores()
+R = 1000
+bootobject <- boot(data = CRISPR, statistic = get_cor, R=R, parallel = "multicore", ncpus = cores)
+
+bootsample <- array(0, c(R, p, p))
+for(i in 1:R){
+  bootsample[i, ,] = matrix(bootobject$t[i, ], nrow=p)
+}
+
+rm(bootobject)
+```
+
+```{r get-cor-ps}
+UMPU_ps <- diag(p)
+FAB_ps <- diag(p)
+
+for(idx in 1:num_groups){
+  group_subset <- subset(group_idx, group_idx==idx)
+  group_mtx <- tensor_to_group_mtx(bootsample, group_subset)
+  group_Cor_F_r <- cor(t(group_mtx))
+  group_F_r <- F_r[cbind(group_subset$row_idx, group_subset$col_idx)]
+  group_p <- dim(group_subset)[1]
+  group_result <- getFABnUMPUpvals(group_Cor_F_r, group_F_r, n, group_p)
+  
+  for(i in 1:group_p){
+    row_idx = group_subset$row_idx[i]
+    col_idx = group_subset$col_idx[i]
+    UMPU_ps[row_idx, col_idx] = group_result[1, i]
+    UMPU_ps[col_idx, row_idx] = group_result[1, i]
+    FAB_ps[row_idx, col_idx] = group_result[2, i]
+    FAB_ps[col_idx, row_idx] = group_result[2, i]
+  }
+  if(idx %% 500 == 0){
+    print(idx)
+  }
+}
+
+```
+
+```{r plot-ps-boot}
+
+UMPU_rej <- ifelse(UMPU_ps<0.05, 1, 0)
+FAB_rej <- ifelse(FAB_ps<0.05, 1, 0)
+
+melted_UMPU_rej <- melt(UMPU_rej)
+ggplot(data = melted_UMPU_rej, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+melted_FAB_rej <- melt(FAB_rej)
+ggplot(data = melted_FAB_rej, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+melted_diff <- melt(UMPU_ps - FAB_ps)
+ggplot(data = melted_diff, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+
+
+UMPU_FAB <- data.frame(UMPU = UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)],
+                       FAB = FAB_ps[lower.tri(FAB_ps, diag = FALSE)])
+
+ggplot(UMPU_FAB, aes(x=UMPU, y=FAB)) + 
+        geom_point(size=2, alpha=0.1) + 
+        labs(title="UMPU vs FAB", x="UMPU p-value", y = "FAB p-value") 
+
+```
+
+
+```{r}
+flat_UMPU_ps <- UMPU_ps[lower.tri(UMPU_ps, diag = FALSE)]
+flat_FAB_ps <- FAB_ps[lower.tri(FAB_ps, diag = FALSE)]
+
+sorted_flat_UMPU <- sort(flat_UMPU_ps)
+sorted_flat_FAB <- sort(flat_FAB_ps)
+
+sorted_ps <- data.frame(cbind(sorted_flat_UMPU, sorted_flat_FAB))
+sorted_ps$rank <- 1:ttl
+
+max_idx <- max(sum(sorted_flat_UMPU<0.05), sum(sum(sorted_flat_FAB<0.05)))
+
+df <- sorted_ps %>%
+  gather(key = "variable", value = "value", -rank)
+
+ggplot(df, aes(x=rank, y=value)) + 
+        geom_line(size=2, aes(color = variable, linetype = variable)) + 
+        labs(title="Ranked (unmatched) P-value", x="rank", y = "p-value") +
+        xlim(0, max_idx) + 
+        ylim(0, 0.05)
+
+
+```
+
+```{r}
+group_idx <- group_idx[order(group_idx$col_idx, group_idx$row_idx), ]
+group_idx$FAB_ps <- flat_FAB_ps
+group_idx$UMPU_ps <- flat_UMPU_ps
+
+alpha = c(0.2)
+FAB_Discoveries = pfilter(group_idx$FAB_ps, alpha, matrix(group_idx$group_idx))
+UMPU_Discoveries = pfilter(group_idx$UMPU_ps, alpha, matrix(c(1:ttl)))
+
+sum(FAB_Discoveries)
+sum(UMPU_Discoveries)
+```

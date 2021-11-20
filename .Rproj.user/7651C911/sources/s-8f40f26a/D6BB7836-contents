@@ -1,0 +1,123 @@
+---
+title: "MassiveExperiment"
+output: html_document
+---
+
+```{r load-packages}
+source("Utils.R")
+source("func_sim_idpt.R")
+source("func_sim_boot.R")
+setwd("~/FABBrainConnectome/FAB_corr")
+set.seed(123)
+options(warn=-1)
+```
+
+```{r gen-data}
+data_info <- gen_sim_data(n=5000, ref_n=5000, p=50, num_in_group=50)
+test_data <- gen_sim_test_data(data_info, n=1000, missing = 0.4)
+```
+
+
+```{r get-indpt-results}
+results <- func_sim_idpt(data_info)
+
+# make Rejection plots
+RejPlots <- makeRejPlot(results)
+plot(RejPlots$UMPU_rej)
+plot(RejPlots$FAB_rej)
+plot(RejPlots$Diff)
+plot(RejPlots$Truth)
+
+# make UMPU vs FAB Plots
+UMPUvsFABPlots <- makeUMPUvsFABPlot(results)
+plot(UMPUvsFABPlots)
+
+# make p value distribution plot
+PDistPlots <- makePDistPlot(results)
+# plot(PDistPlots$UMPU_null)
+# plot(PDistPlots$FAB_null)
+# plot(PDistPlots$UMPU_power)
+# plot(PDistPlots$FAB_power)
+plot(PDistPlots$Rank)
+```
+
+```{r}
+alphas <- seq(0, 0.2, 0.005)
+source("Utils.R")
+comp_result_par <- get_comp_results_par(alphas, test_data, data_info, results)
+
+ggplot() + 
+  geom_line(data = comp_result_par, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+  geom_line(data = comp_result_par, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+  ggtitle("Independent FAB vs UMPU imputation precision") 
+```
+
+```{r}
+# write.csv(comp_result_par, file = "saved_result/idpt_result.csv")
+# library(ggplot2)
+# temp <- read_csv("saved_result/idpt_result.csv")
+# ggplot() + 
+#   geom_line(data = temp, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+#   geom_line(data = temp, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+#   ggtitle("Independent FAB vs UMPU imputation precision") + 
+#   xlim(0, 0.05)
+```
+
+
+
+```{r}
+data_info_boot <- gen_sim_data(n=5000, ref_n=5000, p=50, num_in_group=50)
+test_data_boot <- gen_sim_test_data(data_info_boot, n=1000, missing = 0.4)
+```
+
+
+
+```{r}
+results_boot <- func_sim_boot(data_info_boot, R=2000)
+
+# make Rejection plots
+RejPlots_boot <- makeRejPlot(results_boot)
+plot(RejPlots_boot$UMPU_rej)
+plot(RejPlots_boot$FAB_rej)
+plot(RejPlots_boot$Diff)
+plot(RejPlots_boot$Truth)
+
+# make UMPU vs FAB Plots
+UMPUvsFABPlots_boot <- makeUMPUvsFABPlot(results_boot)
+plot(UMPUvsFABPlots_boot)
+
+# make p value distribution plot
+PDistPlots_boot <- makePDistPlot(results_boot)
+# plot(PDistPlots$UMPU_null)
+# plot(PDistPlots$FAB_null)
+# plot(PDistPlots$UMPU_power)
+# plot(PDistPlots$FAB_power)
+
+plot(PDistPlots_boot$Rank)
+```
+
+```{r}
+alphas <- seq(0, 0.2, 0.005)
+
+source("Utils.R")
+comp_result_par_boot <- get_comp_results_par(alphas, test_data_boot, data_info_boot, results_boot)
+
+
+ggplot() + 
+  geom_line(data = comp_result_par_boot, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+  geom_line(data = comp_result_par_boot, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+  ggtitle("Bootstrap FAB vs UMPU imputation precision") 
+```
+
+```{r}
+# write.csv(comp_result_par_boot, file = "saved_result/boot_result.csv")
+
+# write.csv(comp_result_par, file = "saved_result/boot_result.csv")
+# library(ggplot2)
+# temp <- read_csv("saved_result/boot_result.csv")
+# ggplot() + 
+#   geom_line(data = temp, aes(x=alphas,  y=FAB_mses), size=1, color="blue") +
+#   geom_line(data = temp, aes(x=alphas,  y=UMPU_mses), size=1, color="green") +
+#   ggtitle("Independent FAB vs UMPU imputation precision") + 
+#   xlim(0, 0.05)
+```
