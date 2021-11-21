@@ -38,11 +38,12 @@ pkg_test("abind")
 
 sourceCpp("Cov_struct_func.cpp")
 
+setwd("~/FAB-Correlation-Structure-Testing")
+
 source("Utils.R")
 source("func_sim_idpt.R")
 source("func_sim_boot.R")
 source("software.R")
 
-setwd("~/FABBrainConnectome/FAB_corr")
 
 options(warn=-1)

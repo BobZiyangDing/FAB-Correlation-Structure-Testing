@@ -5,12 +5,6 @@ output: html_document
 
 ```{r load-packages}
 source("Dependency.R")
-# library(FedData)
-# library(gridExtra)
-# source("Utils.R")
-# source("func_sim_idpt.R")
-# source("func_sim_boot.R")
-# setwd("~/FABBrainConnectome/FAB_corr")
 set.seed(124)
 options(warn=-1)
 ```

@@ -1,16 +1,3 @@
-# pkg_test("MASS")
-# pkg_test("matrixcalc")
-# pkg_test("clusterGeneration")
-# pkg_test("pracma")
-# pkg_test("Matrix")
-# pkg_test("tidyverse")
-# pkg_test("foreach")
-# pkg_test("doParallel")
-# pkg_test("hash")
-# pkg_test("MLmetrics")
-# pkg_test("abind")
-# source("software.R")
-
 ###############################
 ####### Utility Function ######
 ###############################
