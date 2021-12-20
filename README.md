@@ -1,13 +1,14 @@
 # Using Prior Information to Boost Power in Correlation Structure Support Recovery
 Focuses on the support recovery problem of correlation matrix structure using the Frequentist Assisted by Bayes approach
 
-xfun::embed_file("image/real_data_power_case_1_RNA-CRISPR.pdf")
-
-# Author COntributions Checklist Form
+# Author Contributions Checklist Form
 
 ## Authors
 * Ziyang Ding
 * David Dunson
+
+## ArXiv Link
+https://arxiv.org/abs/2111.11278
 
 ## Data
 
