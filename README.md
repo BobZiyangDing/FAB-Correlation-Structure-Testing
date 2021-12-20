@@ -5,6 +5,10 @@ xfun::embed_file("image/real_data_power_case_1_RNA-CRISPR.pdf")
 
 # Author COntributions Checklist Form
 
+## Authors
+* Ziyang Ding
+* David Dunson
+
 ## Data
 
 ### Abstract
